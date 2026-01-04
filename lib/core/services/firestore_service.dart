@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart'; // <--- INI YANG TADI KURANG
+import '../../models/user_model.dart';
 
 class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -17,7 +19,9 @@ class FirestoreService {
       await _db.runTransaction((transaction) async {
         DocumentSnapshot snapshot = await transaction.get(userRef);
 
-        if (!snapshot.exists) throw Exception("User tidak ditemukan!");
+        if (!snapshot.exists) {
+          throw Exception("User tidak ditemukan!");
+        }
 
         // AMBIL DATA DENGAN AMAN
         Map<String, dynamic> data = snapshot.data() as Map<String, dynamic>;
@@ -57,7 +61,7 @@ class FirestoreService {
         });
       });
     } catch (e) {
-      print("Error update progress: $e");
+      debugPrint("Error update progress: $e");
       rethrow;
     }
   }
@@ -68,7 +72,9 @@ class FirestoreService {
 
     await _db.runTransaction((transaction) async {
       DocumentSnapshot snapshot = await transaction.get(userRef);
-      if (!snapshot.exists) throw Exception("User not found!");
+      if (!snapshot.exists) {
+        throw Exception("User not found!");
+      }
 
       Map<String, dynamic> data = snapshot.data() as Map<String, dynamic>;
       int currentGold = data['gold'] ?? 0;
@@ -119,5 +125,29 @@ class FirestoreService {
         };
       }).toList();
     });
+  }
+  // --- CARI LAWAN (MATCHMAKING) ---
+  Future<UserModel?> findOpponent(String myUid) async {
+    try {
+      // Ambil daftar user (Limit 50 agar tidak berat)
+      // Di aplikasi asli, ini harusnya pakai Cloud Functions agar lebih efisien
+      QuerySnapshot snapshot = await _db.collection('users')
+          .where(FieldPath.documentId, isNotEqualTo: myUid) // Jangan ambil diri sendiri
+          .limit(20)
+          .get();
+
+      if (snapshot.docs.isEmpty) {
+        return null;
+      }
+
+      // Pilih satu secara acak
+      List<DocumentSnapshot> docs = snapshot.docs;
+      docs.shuffle(); // Acak urutan
+      
+      return UserModel.fromMap(docs.first.data() as Map<String, dynamic>, docs.first.id);
+    } catch (e) {
+      debugPrint("Error finding opponent: $e");
+      return null;
+    }
   }
 }

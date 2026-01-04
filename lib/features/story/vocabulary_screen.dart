@@ -204,7 +204,7 @@ class _VocabularyScreenState extends State<VocabularyScreen> {
         color: const Color(0xFF1E1E2C),
         borderRadius: BorderRadius.circular(25),
         border: Border.all(color: Colors.cyanAccent, width: 2),
-        boxShadow: [BoxShadow(color: Colors.cyanAccent.withOpacity(0.3), blurRadius: 20)],
+        boxShadow: [BoxShadow(color: Colors.cyanAccent.withValues(alpha: 0.3), blurRadius: 20)],
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -240,7 +240,7 @@ class _VocabularyScreenState extends State<VocabularyScreen> {
         color: const Color(0xFF2A0045), // Warna beda biar kerasa dibalik
         borderRadius: BorderRadius.circular(25),
         border: Border.all(color: const Color(0xFFBD00FF), width: 2),
-        boxShadow: [BoxShadow(color: const Color(0xFFBD00FF).withOpacity(0.3), blurRadius: 20)],
+        boxShadow: [BoxShadow(color: const Color(0xFFBD00FF).withValues(alpha: 0.3), blurRadius: 20)],
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,

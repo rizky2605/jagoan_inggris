@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:model_viewer_plus/model_viewer_plus.dart'; // Import Model 3D
 import '../../models/user_model.dart';
-import '../../core/services/firestore_service.dart';
 import '../../models/level_model.dart';
+import '../../core/services/firestore_service.dart';
 import '../quiz/quiz_screen.dart';
+import '../../models/question_model.dart'; // Import Bank Soal
 
 class MatchScreen extends StatefulWidget {
   const MatchScreen({super.key});
@@ -13,159 +15,175 @@ class MatchScreen extends StatefulWidget {
   State<MatchScreen> createState() => _MatchScreenState();
 }
 
-class _MatchScreenState extends State<MatchScreen> with SingleTickerProviderStateMixin {
+class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin {
   late TabController _tabController;
+  late AnimationController _radarController;
+  
   final FirestoreService _firestoreService = FirestoreService();
   final String uid = FirebaseAuth.instance.currentUser!.uid;
-  bool _isSearching = false; // Status sedang mencari lawan
+  
+  bool _isSearching = false;
+  UserModel? _opponent; // Menyimpan data lawan yang ditemukan
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _radarController = AnimationController(vsync: this, duration: const Duration(seconds: 2));
   }
 
-  // --- LOGIKA MATCHMAKING ---
-  void _startMatchmaking(UserModel user) async {
-    setState(() => _isSearching = true);
+  @override
+  void dispose() {
+    _tabController.dispose();
+    _radarController.dispose();
+    super.dispose();
+  }
 
-    // Simulasi mencari lawan (Delay 2 detik)
-    // Nanti di sini logika Backend "Cloud Functions" bekerja
-    await Future.delayed(const Duration(seconds: 2));
+  void _startMatchmaking(UserModel myUser) async {
+    setState(() {
+      _isSearching = true;
+      _opponent = null; // Reset lawan
+    });
+    _radarController.repeat();
 
-    if (mounted) {
-      setState(() => _isSearching = false);
-      
-      // LOGIKA SEMENTARA: 
-      // Karena real-time multiplayer butuh server canggih, 
-      // kita arahkan ke Mode "Ranked Quiz" (Soal lebih sulit/acak).
-      // Kita pakai Level dummy ID 999 sebagai penanda "Ranked Match".
-      
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => QuizScreen(
-            level: LevelModel(id: 999, title: "RANKED MATCH", subtitle: "VS Random Opponent", type: 'test'),
-            user: user,
+    // 1. Simulasi delay network
+    await Future.delayed(const Duration(seconds: 3));
+
+    try {
+      // 2. Cari Lawan
+      UserModel? foundOpponent = await _firestoreService.findOpponent(uid);
+
+      if (foundOpponent != null) {
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _opponent = foundOpponent; // Tampilkan Avatar Lawan
+        });
+        _radarController.stop();
+
+        // 3. Delay sejenak biar player lihat lawannya siapa
+        await Future.delayed(const Duration(seconds: 2));
+
+        if (!mounted) return; // Cek mounted lagi sebelum navigasi
+
+        // 4. Siapkan Soal Acak
+        List<QuestionModel> battleQuestions = List.from(grammarQuestionBank);
+        battleQuestions.shuffle();
+        battleQuestions = battleQuestions.take(5).toList();
+
+        // 5. Masuk ke Arena
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => QuizScreen(
+              level: LevelModel(id: 999, title: "PVP BATTLE", subtitle: "Ranked Match", type: 'pvp'),
+              user: myUser,
+              customQuestions: battleQuestions,
+              opponentName: foundOpponent.username, // Kirim nama lawan
+            ),
           ),
-        ),
-      );
+        );
+        if (!mounted) return;
+        setState(() => _isSearching = false);
+      } else {
+        if (!mounted) return;
+        setState(() => _isSearching = false);
+        _radarController.reset();
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Tidak ada lawan ditemukan.")));
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isSearching = false);
+      _radarController.reset();
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.transparent, // Transparan agar background MainScreen terlihat
+      backgroundColor: Colors.transparent, // Background dihandle MainScreen
       appBar: AppBar(
-        backgroundColor: Colors.black.withOpacity(0.5),
-        toolbarHeight: 0, // Sembunyikan AppBar default
+        backgroundColor: Colors.black.withValues(alpha: 0.8),
+        title: const Text("ARENA", style: TextStyle(fontFamily: 'Orbitron', fontWeight: FontWeight.bold, color: Colors.white)),
+        centerTitle: true,
         bottom: TabBar(
           controller: _tabController,
           indicatorColor: Colors.cyanAccent,
           labelColor: Colors.cyanAccent,
           unselectedLabelColor: Colors.white54,
-          labelStyle: const TextStyle(fontWeight: FontWeight.bold),
-          tabs: const [
-            Tab(text: "BATTLE"),
-            Tab(text: "LEADERBOARD"),
-          ],
+          tabs: const [Tab(text: "LOBBY"), Tab(text: "RANKING")],
         ),
       ),
       body: TabBarView(
         controller: _tabController,
         children: [
-          _buildBattleTab(),      // Tab 1: Lobby
-          _buildLeaderboardTab(), // Tab 2: Peringkat
+          _buildLobby(), // Tab 1
+          const Center(child: Text("Leaderboard Here", style: TextStyle(color: Colors.white))), // Tab 2 Placeholder
         ],
       ),
     );
   }
 
-  // --- TAB 1: BATTLE LOBBY ---
-  Widget _buildBattleTab() {
+  // --- UI LOBBY (KIRI - TENGAH - KANAN) ---
+  Widget _buildLobby() {
     return StreamBuilder<DocumentSnapshot>(
       stream: FirebaseFirestore.instance.collection('users').doc(uid).snapshots(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-        
-        // Parsing data aman
-        Map<String, dynamic> data = snapshot.data!.data() as Map<String, dynamic>;
-        UserModel user = UserModel.fromMap(data, uid);
+        UserModel myUser = UserModel.fromMap(snapshot.data!.data() as Map<String, dynamic>, uid);
 
-        return Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+        return Container(
+          decoration: const BoxDecoration(
+            image: DecorationImage(image: AssetImage("assets/images/bg_stars.jpg"), fit: BoxFit.cover),
+          ),
+          child: Row(
             children: [
-              // Rank Badge (Lingkaran Neon)
-              Container(
-                width: 180,
-                height: 180,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.purpleAccent, width: 4),
-                  boxShadow: [
-                    BoxShadow(color: Colors.purpleAccent.withOpacity(0.5), blurRadius: 40, spreadRadius: 10)
-                  ],
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF2A0045), Color(0xFF000000)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                ),
+              // --- KIRI: PLAYER (KITA) ---
+              Expanded(
+                flex: 3,
+                child: _buildPlayerCard(myUser, isMe: true),
+              ),
+
+              // --- TENGAH: RADAR / VS ---
+              Expanded(
+                flex: 4,
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.shield, size: 60, color: Colors.amber),
-                    const SizedBox(height: 10),
+                    if (_isSearching && _opponent == null)
+                      _buildRadar() // Tampilkan Radar
+                    else if (_opponent != null)
+                      const Text("VS", style: TextStyle(fontSize: 60, fontWeight: FontWeight.bold, color: Colors.redAccent, fontFamily: 'Orbitron'))
+                    else
+                      ElevatedButton(
+                        onPressed: () => _startMatchmaking(myUser),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.cyanAccent,
+                          foregroundColor: Colors.black,
+                          padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
+                          elevation: 10,
+                          shadowColor: Colors.cyanAccent,
+                        ),
+                        child: const Text("CARI LAWAN", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      ),
+                    
+                    const SizedBox(height: 20),
                     Text(
-                      user.rankName.toUpperCase(),
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
-                    ),
-                    Text(
-                      "${user.mmr} MMR",
-                      style: const TextStyle(color: Colors.cyanAccent, fontSize: 14),
-                    ),
+                      _isSearching ? (_opponent != null ? "LAWAN DITEMUKAN!" : "MENCARI...") : "SIAP TEMPUR",
+                      style: const TextStyle(color: Colors.white, letterSpacing: 2),
+                    )
                   ],
                 ),
               ),
-              
-              const SizedBox(height: 50),
 
-              // Statistik Menang/Kalah
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  _buildStatItem("WIN", user.winCount, Colors.greenAccent),
-                  Container(height: 30, width: 1, color: Colors.white24, margin: const EdgeInsets.symmetric(horizontal: 20)),
-                  _buildStatItem("LOSS", user.lossCount, Colors.redAccent),
-                ],
+              // --- KANAN: LAWAN (MISTERIUS -> MUNCUL) ---
+              Expanded(
+                flex: 3,
+                child: _opponent != null 
+                  ? _buildPlayerCard(_opponent!, isMe: false) // Tampilkan Lawan
+                  : _buildEmptySlot(), // Slot Kosong
               ),
-
-              const SizedBox(height: 50),
-
-              // Tombol Cari Lawan
-              if (_isSearching)
-                Column(
-                  children: const [
-                    CircularProgressIndicator(color: Colors.cyanAccent),
-                    SizedBox(height: 20),
-                    Text("MENCARI LAWAN...", style: TextStyle(color: Colors.white70, letterSpacing: 2)),
-                  ],
-                )
-              else
-                ElevatedButton(
-                  onPressed: () => _startMatchmaking(user),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.cyanAccent,
-                    foregroundColor: Colors.black,
-                    padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 15),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                    elevation: 10,
-                    shadowColor: Colors.cyanAccent,
-                  ),
-                  child: const Text("CARI LAWAN", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                ),
             ],
           ),
         );
@@ -173,78 +191,69 @@ class _MatchScreenState extends State<MatchScreen> with SingleTickerProviderStat
     );
   }
 
-  Widget _buildStatItem(String label, int value, Color color) {
-    return Column(
-      children: [
-        Text("$value", style: TextStyle(color: color, fontSize: 24, fontWeight: FontWeight.bold)),
-        Text(label, style: const TextStyle(color: Colors.white54, fontSize: 12)),
-      ],
+  // Widget Kartu Player (Kiri/Kanan)
+  Widget _buildPlayerCard(UserModel user, {required bool isMe}) {
+    return Container(
+      margin: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: isMe ? Colors.blue.withValues(alpha: 0.2) : Colors.red.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: isMe ? Colors.cyanAccent : Colors.redAccent),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // Nama & Rank
+          Text(user.username, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+          Text(user.rankName, style: TextStyle(color: isMe ? Colors.cyanAccent : Colors.redAccent, fontSize: 12)),
+          
+          const SizedBox(height: 10),
+          
+          // Avatar 3D
+          Expanded(
+            child: ModelViewer(
+              // Jika lawan blm punya loadout, kasih default monster/avatar
+              src: isMe 
+                  ? 'assets/models/avatar_default.glb' 
+                  : (user.uid.hashCode % 2 == 0 ? 'assets/models/monster.glb' : 'assets/models/avatar_default.glb'),
+              autoRotate: true,
+              cameraControls: false,
+              backgroundColor: Colors.transparent,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
-  // --- TAB 2: LEADERBOARD ---
-  Widget _buildLeaderboardTab() {
-    return StreamBuilder<List<Map<String, dynamic>>>(
-      stream: _firestoreService.getLeaderboard(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-        
-        List<Map<String, dynamic>> players = snapshot.data!;
+  // Widget Slot Kosong (Kanan sebelum ketemu)
+  Widget _buildEmptySlot() {
+    return Container(
+      margin: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.white12, width: 2, style: BorderStyle.solid),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: const Center(
+        child: Icon(Icons.question_mark, size: 50, color: Colors.white24),
+      ),
+    );
+  }
 
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: players.length,
-          itemBuilder: (context, index) {
-            final player = players[index];
-            bool isTop3 = index < 3;
-            
-            return Container(
-              margin: const EdgeInsets.only(bottom: 10),
-              decoration: BoxDecoration(
-                color: player['isMe'] 
-                    ? Colors.cyanAccent.withOpacity(0.2) // Highlight diri sendiri
-                    : Colors.white.withOpacity(0.05),
-                borderRadius: BorderRadius.circular(12),
-                border: player['isMe'] ? Border.all(color: Colors.cyanAccent) : null,
-              ),
-              child: ListTile(
-                leading: Container(
-                  width: 40,
-                  height: 40,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: isTop3 ? Colors.amber : Colors.grey[800],
-                  ),
-                  child: Text(
-                    "#${index + 1}",
-                    style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black),
-                  ),
-                ),
-                title: Text(
-                  player['username'],
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                ),
-                subtitle: Text(
-                  player['rank_name'],
-                  style: const TextStyle(color: Colors.white54, fontSize: 12),
-                ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.emoji_events, color: Colors.purpleAccent, size: 16),
-                    const SizedBox(width: 4),
-                    Text(
-                      "${player['mmr']}",
-                      style: const TextStyle(color: Colors.cyanAccent, fontWeight: FontWeight.bold),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
+  // Animasi Radar
+  Widget _buildRadar() {
+    return RotationTransition(
+      turns: _radarController,
+      child: Container(
+        width: 120, height: 120,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: SweepGradient(
+            colors: [Colors.transparent, Colors.cyanAccent.withValues(alpha: 0.5)],
+          ),
+          border: Border.all(color: Colors.cyanAccent.withValues(alpha: 0.3)),
+        ),
+      ),
     );
   }
 }

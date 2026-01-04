@@ -24,11 +24,12 @@ class _AuthScreenState extends State<AuthScreen> {
 
   // Fungsi Utama Login/Daftar
   Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
 
     setState(() => _isLoading = true);
 
-    String? result; // Akan berisi User object atau null
     String message = "";
 
     try {
@@ -108,7 +109,7 @@ class _AuthScreenState extends State<AuthScreen> {
                       fontWeight: FontWeight.bold,
                       color: primaryColor,
                       shadows: [
-                        BoxShadow(color: primaryColor.withOpacity(0.5), blurRadius: 20)
+                        BoxShadow(color: primaryColor.withValues(alpha: 0.5), blurRadius: 20)
                       ],
                     ),
                   ),
@@ -123,9 +124,9 @@ class _AuthScreenState extends State<AuthScreen> {
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.05),
+                      color: Colors.white.withValues(alpha: 0.05),
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: Colors.white.withOpacity(0.1)),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
                     ),
                     child: Column(
                       children: [
@@ -180,12 +181,12 @@ class _AuthScreenState extends State<AuthScreen> {
                                 borderRadius: BorderRadius.circular(15),
                               ),
                               elevation: 10,
-                              shadowColor: secondaryColor.withOpacity(0.5),
+                              shadowColor: secondaryColor.withValues(alpha: 0.5),
                             ),
                             child: Text(
                               _isLogin ? "MASUK SEKARANG" : "BUAT AKUN",
                               style: const TextStyle(
-                                fontSize: 16, 
+                                fontSize: 16,
                                 fontWeight: FontWeight.bold,
                                 color: Colors.black, // Kontras dengan tombol Cyan
                               ),
@@ -255,7 +256,7 @@ class _AuthScreenState extends State<AuthScreen> {
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.white.withOpacity(0.1)),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),

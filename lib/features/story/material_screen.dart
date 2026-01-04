@@ -81,12 +81,12 @@ class MaterialScreen extends StatelessWidget {
                           child: Container(
                             padding: const EdgeInsets.all(20),
                             decoration: BoxDecoration(
-                              color: Colors.black.withOpacity(0.6),
+                              color: Colors.black..withValues(alpha: 0.6),
                               borderRadius: BorderRadius.circular(20),
                               border: Border.all(color: const Color(0xFFBD00FF), width: 2),
                               boxShadow: [
                                 BoxShadow(
-                                  color: const Color(0xFFBD00FF).withOpacity(0.3),
+                                  color: const Color(0xFFBD00FF)..withValues(alpha: 0.3),
                                   blurRadius: 15,
                                   spreadRadius: 1
                                 )

@@ -30,7 +30,9 @@ class _AvatarScreenState extends State<AvatarScreen> with SingleTickerProviderSt
   }
 
   String _findAssetPath(String category, String? itemId) {
-    if (itemId == null) return '';
+    if (itemId == null) {
+      return '';
+    }
     try {
       return shopCatalog.firstWhere((i) => i.id == itemId).assetPath;
     } catch (e) {
@@ -43,7 +45,9 @@ class _AvatarScreenState extends State<AvatarScreen> with SingleTickerProviderSt
     return StreamBuilder<DocumentSnapshot>(
       stream: FirebaseFirestore.instance.collection('users').doc(uid).snapshots(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator(color: Colors.cyanAccent));
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator(color: Colors.cyanAccent));
+        }
 
         UserModel user = UserModel.fromMap(snapshot.data!.data() as Map<String, dynamic>, uid);
 
@@ -67,13 +71,13 @@ class _AvatarScreenState extends State<AvatarScreen> with SingleTickerProviderSt
                     end: Alignment.bottomRight,
                     colors: [
                       const Color(0xFF2A0045),
-                      Colors.black.withOpacity(0.9),
+                      Colors.black.withValues(alpha: 0.9),
                     ],
                   ),
                   borderRadius: BorderRadius.circular(30),
                   border: Border.all(color: Colors.white10),
                   boxShadow: [
-                    BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 15, offset: const Offset(0, 5))
+                    BoxShadow(color: Colors.black.withValues(alpha: 0.5), blurRadius: 15, offset: const Offset(0, 5))
                   ],
                 ),
                 child: ClipRRect(
@@ -90,7 +94,7 @@ class _AvatarScreenState extends State<AvatarScreen> with SingleTickerProviderSt
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             boxShadow: [
-                              BoxShadow(color: const Color(0xFFBD00FF).withOpacity(0.4), blurRadius: 50, spreadRadius: 10)
+                              BoxShadow(color: const Color(0xFFBD00FF).withValues(alpha: 0.4), blurRadius: 50, spreadRadius: 10)
                             ]
                           ),
                         ),
@@ -115,7 +119,7 @@ class _AvatarScreenState extends State<AvatarScreen> with SingleTickerProviderSt
                             decoration: BoxDecoration(
                               color: Colors.amber,
                               borderRadius: BorderRadius.circular(20),
-                              boxShadow: [BoxShadow(color: Colors.amber.withOpacity(0.4), blurRadius: 10)]
+                              boxShadow: [BoxShadow(color: Colors.amber.withValues(alpha: 0.4), blurRadius: 10)]
                             ),
                             child: const Text("PREVIEW MODE", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.black)),
                           ),
@@ -145,7 +149,7 @@ class _AvatarScreenState extends State<AvatarScreen> with SingleTickerProviderSt
                       indicator: BoxDecoration(
                         color: const Color(0xFFBD00FF),
                         borderRadius: BorderRadius.circular(25),
-                        boxShadow: [BoxShadow(color: const Color(0xFFBD00FF).withOpacity(0.4), blurRadius: 10)]
+                        boxShadow: [BoxShadow(color: const Color(0xFFBD00FF).withValues(alpha: 0.4), blurRadius: 10)]
                       ),
                       labelColor: Colors.white,
                       unselectedLabelColor: Colors.white38,
@@ -165,7 +169,7 @@ class _AvatarScreenState extends State<AvatarScreen> with SingleTickerProviderSt
                       margin: const EdgeInsets.only(right: 12, bottom: 12),
                       // Background tipis di area grid
                       decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.2),
+                        color: Colors.black.withValues(alpha: 0.2),
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: ClipRRect(
@@ -215,15 +219,25 @@ class _AvatarScreenState extends State<AvatarScreen> with SingleTickerProviderSt
     bool isEquipped = user.equippedLoadout[item.category] == item.id;
     
     bool isPreviewing = false;
-    if (item.category == 'body' && _previewBody == item.id) isPreviewing = true;
-    if (item.category == 'weapon' && _previewWeapon == item.id) isPreviewing = true;
-    if (item.category == 'wings' && _previewWings == item.id) isPreviewing = true;
+    if (item.category == 'body' && _previewBody == item.id) {
+      isPreviewing = true;
+    }
+    if (item.category == 'weapon' && _previewWeapon == item.id) {
+      isPreviewing = true;
+    }
+    if (item.category == 'wings' && _previewWings == item.id) {
+      isPreviewing = true;
+    }
 
     // Warna Tema
     Color themeColor = Colors.white12;
-    if (isEquipped) themeColor = Colors.greenAccent;
-    else if (isPreviewing) themeColor = Colors.amber;
-    else if (isOwned) themeColor = Colors.cyanAccent;
+    if (isEquipped) {
+      themeColor = Colors.greenAccent;
+    } else if (isPreviewing) {
+      themeColor = Colors.amber;
+    } else if (isOwned) {
+      themeColor = Colors.cyanAccent;
+    }
 
     String iconPath = 'assets/assets/images/icon_${item.category}.png'; 
 
@@ -241,11 +255,11 @@ class _AvatarScreenState extends State<AvatarScreen> with SingleTickerProviderSt
           color: const Color(0xFF252535), // Warna kartu solid
           borderRadius: BorderRadius.circular(15), 
           border: Border.all(
-            color: themeColor.withOpacity(isPreviewing || isEquipped ? 1.0 : 0.3), 
+            color: themeColor.withValues(alpha: isPreviewing || isEquipped ? 1.0 : 0.3), 
             width: isPreviewing || isEquipped ? 2 : 1
           ),
           boxShadow: isPreviewing || isEquipped ? [
-            BoxShadow(color: themeColor.withOpacity(0.2), blurRadius: 12, spreadRadius: 1)
+            BoxShadow(color: themeColor.withValues(alpha: 0.2), blurRadius: 12, spreadRadius: 1)
           ] : [],
         ),
         child: Column(
@@ -275,7 +289,7 @@ class _AvatarScreenState extends State<AvatarScreen> with SingleTickerProviderSt
                   // Background glow halus di belakang ikon
                   gradient: RadialGradient(
                     colors: [
-                      themeColor.withOpacity(0.15),
+                      themeColor.withValues(alpha: 0.15),
                       Colors.transparent
                     ]
                   )
@@ -309,9 +323,9 @@ class _AvatarScreenState extends State<AvatarScreen> with SingleTickerProviderSt
                 padding: const EdgeInsets.symmetric(vertical: 6),
                 decoration: BoxDecoration(
                   // Warna tombol berbeda sesuai status
-                  color: isEquipped ? Colors.green.withOpacity(0.2) 
-                       : (isOwned ? Colors.blue.withOpacity(0.2) 
-                       : Colors.amber.withOpacity(0.2)),
+                  color: isEquipped ? Colors.green.withValues(alpha: 0.2) 
+                       : (isOwned ? Colors.blue.withValues(alpha: 0.2) 
+                       : Colors.amber.withValues(alpha: 0.2)),
                   borderRadius: const BorderRadius.vertical(bottom: Radius.circular(13)), // Rounded Bawah saja
                 ),
                 child: Text(

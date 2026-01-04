@@ -1,3 +1,4 @@
+import 'dart:async'; // Untuk Timer
 import 'package:flutter/material.dart';
 import 'package:model_viewer_plus/model_viewer_plus.dart';
 import '../../models/question_model.dart';
@@ -8,55 +9,153 @@ import 'result_screen.dart';
 class QuizScreen extends StatefulWidget {
   final LevelModel level;
   final UserModel user;
+  final List<QuestionModel>? customQuestions;
+  final String? opponentName; // Nama lawan (opsional)
 
-  const QuizScreen({super.key, required this.level, required this.user});
+  const QuizScreen({
+    super.key, 
+    required this.level, 
+    required this.user,
+    this.customQuestions,
+    this.opponentName,
+  });
 
   @override
   State<QuizScreen> createState() => _QuizScreenState();
 }
 
 class _QuizScreenState extends State<QuizScreen> {
-  // --- STATE PERMAINAN ---
+  // Game State
   int _currentIndex = 0;
   double _monsterHealth = 1.0;
+  double _playerHealth = 1.0; // HP Pemain (Baru)
   int _score = 0;
   bool _isAnswered = false;
+  
+  // Timer Logic
+  Timer? _questionTimer;
+  int _timeLeft = 10; // 10 detik per soal
+  final int _maxTime = 10;
 
-  // Data Soal Dummy (Level 1)
-  final List<QuestionModel> _questions = level1Questions;
+  // Countdown Awal (3..2..1)
+  int _startCountdown = 3;
+  bool _isGameStarted = false;
 
-  // --- LOGIKA MENJAWAB ---
+  late List<QuestionModel> _questions;
+
+  @override
+  void initState() {
+    super.initState();
+    _questions = widget.customQuestions ?? level1Questions;
+    
+    // Mulai hitung mundur sebelum game
+    _startPreGameCountdown();
+  }
+
+  void _startPreGameCountdown() {
+    Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_startCountdown > 0) {
+        setState(() => _startCountdown--);
+      } else {
+        timer.cancel();
+        setState(() {
+          _isGameStarted = true; // Game dimulai!
+        });
+        _startQuestionTimer(); // Mulai timer soal pertama
+      }
+    });
+  }
+
+  void _startQuestionTimer() {
+    _timeLeft = _maxTime;
+    _questionTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_timeLeft > 0) {
+        setState(() => _timeLeft--);
+      } else {
+        // Waktu habis = Salah
+        _answerQuestion(-1); 
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _questionTimer?.cancel();
+    super.dispose();
+  }
+
   void _answerQuestion(int selectedIndex) {
-    if (_isAnswered) return;
+    if (_isAnswered) {
+      return;
+    }
+    _questionTimer?.cancel(); // Stop waktu
 
     setState(() {
       _isAnswered = true;
     });
 
-    bool isCorrect = selectedIndex == _questions[_currentIndex].correctIndex;
+    QuestionModel currentQ = _questions[_currentIndex];
+    bool isCorrect = selectedIndex == currentQ.correctIndex;
 
     if (isCorrect) {
+      // --- LOGIKA SKOR BERBASIS KECEPATAN ---
+      // Base score 10, bonus sisa waktu * 2
+      int speedBonus = _timeLeft * 2;
+      int damage = 15; // Damage dasar
+
+      // Cek Buff
+      if (currentQ.buffType == 'damage') {
+        damage *= 2; // Critical Hit!
+        _showBuffEffect("DAMAGE UP! CRITICAL HIT!");
+      } else if (currentQ.buffType == 'heal') {
+        _playerHealth = (_playerHealth + 0.2).clamp(0.0, 1.0);
+        _showBuffEffect("HEALING ACTIVATED!");
+      } else if (currentQ.buffType == 'defense') {
+        _showBuffEffect("SHIELD UP!");
+      }
+
       setState(() {
-        _score++;
-        _monsterHealth -= (1.0 / _questions.length);
-        if (_monsterHealth < 0) _monsterHealth = 0;
+        _score += (10 + speedBonus);
+        _monsterHealth -= (damage / 100); // Kurangi HP monster
+        if (_monsterHealth < 0) {
+          _monsterHealth = 0;
+        }
+      });
+    } else {
+      // Jika salah, kita kena damage
+      setState(() {
+        _playerHealth -= 0.15;
+        if (_playerHealth < 0) {
+          _playerHealth = 0;
+        }
       });
     }
 
+    // Pindah Soal
     Future.delayed(const Duration(milliseconds: 1500), () {
-      if (_currentIndex < _questions.length - 1) {
+      if (_currentIndex < _questions.length - 1 && _playerHealth > 0) {
         setState(() {
           _currentIndex++;
           _isAnswered = false;
         });
+        _startQuestionTimer(); // Reset timer untuk soal berikutnya
       } else {
         _showVictoryDialog();
       }
     });
   }
 
+  void _showBuffEffect(String text) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(text, textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        backgroundColor: Colors.amber,
+        duration: const Duration(milliseconds: 800),
+      )
+    );
+  }
+
   void _showVictoryDialog() {
-    // Pindah ke layar hasil untuk memproses hadiah
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
@@ -72,6 +171,10 @@ class _QuizScreenState extends State<QuizScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_isGameStarted) {
+      return _buildCountdownOverlay();
+    } // Tampilkan hitung mundur dulu
+
     QuestionModel currentQ = _questions[_currentIndex];
     final pinkNeon = const Color(0xFFFF66C4);
     final cyanNeon = Colors.cyanAccent;
@@ -79,156 +182,90 @@ class _QuizScreenState extends State<QuizScreen> {
     return Scaffold(
       body: Stack(
         children: [
-          // 1. BACKGROUND
+          // Background
           Container(
             decoration: const BoxDecoration(
-              image: DecorationImage(
-                image: AssetImage("assets/images/bg_stars.jpg"), // Pastikan file ini ada
-                fit: BoxFit.cover,
-              ),
-              color: Color(0xFF0F0025), // Fallback warna
+              image: DecorationImage(image: AssetImage("assets/images/bg_stars.jpg"), fit: BoxFit.cover),
+              color: Color(0xFF0F0025),
             ),
           ),
 
-          // 2. KONTEN UTAMA
           SafeArea(
             child: Column(
               children: [
-                _buildHeader(widget.user),
-                const SizedBox(height: 10),
-
-                // PROGRESS BAR
+                // HEADER (TIMER & BUFF INFO)
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 40),
-                  child: Column(
+                  padding: const EdgeInsets.all(10),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text("Soal ${_currentIndex + 1}/${_questions.length}", style: TextStyle(color: pinkNeon)),
-                      const SizedBox(height: 5),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(10),
-                        child: LinearProgressIndicator(
-                          value: (_currentIndex + 1) / _questions.length,
-                          backgroundColor: Colors.white10,
-                          color: pinkNeon,
-                          minHeight: 8,
+                      _buildTimerBadge(),
+                      if (currentQ.buffType != 'none')
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                          decoration: BoxDecoration(color: Colors.amber, borderRadius: BorderRadius.circular(20)),
+                          child: Text("BONUS: ${currentQ.buffType.toUpperCase()}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 10)),
+                        ),
+                    ],
+                  ),
+                ),
+
+                // ARENA
+                Expanded(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      // KIRI: PLAYER
+                      Expanded(
+                        flex: 2,
+                        child: _buildCharacterStats(widget.user.username, _playerHealth, 'assets/models/avatar_default.glb', cyanNeon),
+                      ),
+
+                      // TENGAH: SOAL
+                      Expanded(
+                        flex: 4,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(15),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.7),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(color: pinkNeon),
+                                boxShadow: [BoxShadow(color: pinkNeon.withValues(alpha: 0.3), blurRadius: 20)],
+                              ),
+                              child: Text(
+                                currentQ.question,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+                            // Pilihan Jawaban
+                            ...List.generate(currentQ.options.length, (index) {
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 8.0),
+                                child: _buildAnswerButton(currentQ.options[index], index, currentQ.correctIndex),
+                              );
+                            }),
+                          ],
+                        ),
+                      ),
+
+                      // KANAN: LAWAN (OPPONENT)
+                      Expanded(
+                        flex: 2,
+                        child: _buildCharacterStats(
+                          widget.opponentName ?? "MONSTER", 
+                          _monsterHealth, 
+                          widget.opponentName != null ? 'assets/models/avatar_default.glb' : 'assets/models/monster.glb', // Avatar beda kalau pvp
+                          Colors.redAccent
                         ),
                       ),
                     ],
                   ),
                 ),
-
-                // --- AREA BATTLE (Tengah) ---
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 10), // Kurangi padding vertikal
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.center, // Ubah ke Center agar sejajar
-                      children: [
-                        // KIRI: AVATAR PEMAIN
-                        Expanded(
-                          flex: 2,
-                          child: _buildAvatarWithGlow(
-                            // PERBAIKAN: Gunakan file avatar default jika bow tidak ada
-                            'assets/models/avatar_default.glb', 
-                            cyanNeon,
-                          ),
-                        ),
-                        
-                        // TENGAH: KOTAK SOAL
-                        Expanded(
-                          flex: 3,
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(20),
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withOpacity(0.6),
-                                  borderRadius: BorderRadius.circular(20),
-                                  border: Border.all(color: pinkNeon, width: 2),
-                                  boxShadow: [
-                                    BoxShadow(color: pinkNeon.withOpacity(0.3), blurRadius: 15, spreadRadius: 2)
-                                  ],
-                                ),
-                                child: Column(
-                                  children: [
-                                    const Text("Pilih kata yang tepat:", style: TextStyle(color: Colors.white70, fontSize: 12)),
-                                    const SizedBox(height: 10),
-                                    Text(
-                                      currentQ.question,
-                                      style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-                                      textAlign: TextAlign.center,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(height: 20),
-                              // TOMBOL JAWABAN
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceEvenly, // SpaceEvenly agar rapi
-                                children: List.generate(currentQ.options.length, (index) {
-                                  Color borderColor = cyanNeon;
-                                  Color shadowColor = cyanNeon.withOpacity(0.3);
-                                  
-                                  if (_isAnswered) {
-                                    if (index == currentQ.correctIndex) {
-                                      borderColor = Colors.greenAccent;
-                                      shadowColor = Colors.greenAccent.withOpacity(0.5);
-                                    } else {
-                                      borderColor = Colors.redAccent;
-                                      shadowColor = Colors.redAccent.withOpacity(0.5);
-                                    }
-                                  } 
-
-                                  return _buildAnswerButton(
-                                    currentQ.options[index],
-                                    index,
-                                    borderColor,
-                                    shadowColor,
-                                  );
-                                }),
-                              ),
-                            ],
-                          ),
-                        ),
-
-                        // KANAN: MONSTER
-                        Expanded(
-                          flex: 2,
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 10),
-                                child: Column(
-                                  children: [
-                                    Text("HP: ${(_monsterHealth * 100).toInt()}%", style: TextStyle(color: pinkNeon, fontWeight: FontWeight.bold, fontSize: 12)),
-                                    ClipRRect(
-                                      borderRadius: BorderRadius.circular(5),
-                                      child: LinearProgressIndicator(
-                                        value: _monsterHealth,
-                                        backgroundColor: Colors.white10,
-                                        color: pinkNeon,
-                                        minHeight: 6,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(height: 5),
-                              // Model Monster (Pastikan nama file benar, kalau monster.glb ga ada pake avatar_default.glb dulu buat tes)
-                              _buildAvatarWithGlow(
-                                'assets/models/monster.glb', 
-                                cyanNeon,
-                                isMonster: true,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
               ],
             ),
           ),
@@ -237,111 +274,86 @@ class _QuizScreenState extends State<QuizScreen> {
     );
   }
 
-  // HEADER PROFIL
-  Widget _buildHeader(UserModel user) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      color: Colors.black.withOpacity(0.4),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: const Color(0xFF2A2A2A),
-              borderRadius: BorderRadius.circular(15),
-              border: Border.all(color: Colors.white24),
-            ),
-            child: Text("Lv. ${user.level}", style: const TextStyle(color: Colors.white, fontSize: 11)),
-          ),
-          const SizedBox(width: 8),
-          CircleAvatar(backgroundColor: Colors.purple, radius: 12, child: Text(user.username[0].toUpperCase(), style: const TextStyle(fontSize: 10))),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(user.username, style: const TextStyle(color: Colors.white, fontSize: 11)),
-                const SizedBox(height: 2),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: LinearProgressIndicator(
-                    value: (user.currentXp / user.maxXp).clamp(0.0, 1.0),
-                    backgroundColor: Colors.grey[800],
-                    color: const Color(0xFFFF66C4),
-                    minHeight: 3,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 10),
-          Row(children: [const Icon(Icons.monetization_on, color: Colors.amber, size: 16), const SizedBox(width: 2), Text("${user.gold}", style: const TextStyle(color: Colors.white, fontSize: 11))]),
-        ],
-      ),
-    );
-  }
-
-  // --- WIDGET HELPER: AVATAR (PERBAIKAN POSISI) ---
-  Widget _buildAvatarWithGlow(String modelPath, Color glowColor, {bool isMonster = false}) {
-    // Gunakan LayoutBuilder untuk memastikan model tau ukuran wadahnya
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return Stack(
-          alignment: Alignment.center, // Ubah ke Center agar di tengah vertikal
-          clipBehavior: Clip.none, // Izinkan glow keluar sedikit dari batas
+  Widget _buildCountdownOverlay() {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Cincin Glow (Diposisikan di kaki model)
-            Positioned(
-              bottom: 20, // Naikkan sedikit dari dasar
-              child: Container(
-                width: 100, // Kecilkan sedikit agar proporsional
-                height: 30,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: glowColor, width: 2),
-                  boxShadow: [BoxShadow(color: glowColor.withOpacity(0.5), blurRadius: 15, spreadRadius: 2)],
-                ),
-              ),
+            const Text("BERSIP!", style: TextStyle(color: Colors.white, fontSize: 20, letterSpacing: 5)),
+            const SizedBox(height: 20),
+            Text(
+              "$_startCountdown",
+              style: const TextStyle(color: Colors.cyanAccent, fontSize: 100, fontWeight: FontWeight.bold),
             ),
-            
-            // Model 3D
-            SizedBox(
-              height: 200, // Tentukan tinggi pasti agar tidak 'floating' sembarangan
-              width: 150,
-              child: ModelViewer(
-                src: modelPath,
-                autoRotate: isMonster,
-                cameraControls: false, // Matikan kontrol agar user tidak geser2 posisi
-                backgroundColor: Colors.transparent,
-                disableZoom: true, // Matikan zoom agar posisi tetap
+            if (widget.opponentName != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 20),
+                child: Text("VS ${widget.opponentName}", style: const TextStyle(color: Colors.redAccent, fontSize: 18)),
               ),
-            ),
           ],
-        );
-      }
+        ),
+      ),
     );
   }
 
-  // TOMBOL JAWABAN
-  Widget _buildAnswerButton(String text, int index, Color borderColor, Color shadowColor) {
+  Widget _buildTimerBadge() {
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: _timeLeft < 4 ? Colors.red : Colors.blueAccent,
+        shape: BoxShape.circle,
+        boxShadow: [BoxShadow(color: (_timeLeft < 4 ? Colors.red : Colors.blue).withValues(alpha: 0.5), blurRadius: 10)],
+      ),
+      child: Text("$_timeLeft", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+    );
+  }
+
+  Widget _buildCharacterStats(String name, double hp, String model, Color color) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        // HP Bar
+        Container(
+          width: 80, height: 8,
+          margin: const EdgeInsets.only(bottom: 5),
+          child: LinearProgressIndicator(value: hp, color: color, backgroundColor: Colors.grey[800]),
+        ),
+        Text(name, style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold)),
+        
+        // Model
+        SizedBox(
+          height: 150,
+          child: ModelViewer(src: model, autoRotate: false, cameraControls: false, backgroundColor: Colors.transparent),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAnswerButton(String text, int index, int correctIndex) {
+    Color borderColor = Colors.white24;
+    Color bgColor = Colors.black54;
+
+    if (_isAnswered) {
+      if (index == correctIndex) {
+        borderColor = Colors.green; bgColor = Colors.green.withValues(alpha: 0.3);
+      } else {
+        borderColor = Colors.red; bgColor = Colors.red.withValues(alpha: 0.3);
+      }
+    }
+
     return GestureDetector(
       onTap: () => _answerQuestion(index),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        width: 80, // Perkecil lebar tombol
-        padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.5),
-          border: Border.all(color: borderColor, width: 2),
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [BoxShadow(color: shadowColor, blurRadius: 10, spreadRadius: 1)],
+          color: bgColor,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: borderColor),
         ),
-        child: Center(
-          child: Text(
-            text,
-            style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
-          ),
-        ),
+        child: Text(text, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
       ),
     );
   }

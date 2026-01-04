@@ -96,7 +96,7 @@ class _MainScreenState extends State<MainScreen> {
       // NAVIGASI BAWAH
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
-          color: const Color(0xFF0F0025).withOpacity(0.9),
+          color: const Color(0xFF0F0025).withValues(alpha: 0.9),
           border: const Border(top: BorderSide(color: Colors.white10)),
         ),
         child: BottomNavigationBar(
@@ -122,7 +122,7 @@ class _MainScreenState extends State<MainScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.3),
+        color: Colors.black.withValues(alpha: 0.3),
         border: const Border(bottom: BorderSide(color: Colors.white10)),
       ),
       child: Row(

@@ -110,7 +110,7 @@ class StoryScreen extends StatelessWidget {
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [Colors.transparent, Colors.black.withOpacity(0.5)],
+                colors: [Colors.transparent, Colors.black.withValues(alpha: 0.5)],
               ),
             ),
             child: ListView.builder(
@@ -145,7 +145,7 @@ class StoryScreen extends StatelessWidget {
       decoration: BoxDecoration(
         gradient: LinearGradient(colors: [colorStart, colorEnd], begin: Alignment.topLeft, end: Alignment.bottomRight),
         borderRadius: BorderRadius.circular(20),
-        boxShadow: [BoxShadow(color: colorStart.withOpacity(0.4), blurRadius: 8, offset: const Offset(0, 4))],
+        boxShadow: [BoxShadow(color: colorStart.withValues(alpha: 0.4), blurRadius: 8, offset: const Offset(0, 4))],
         border: Border.all(color: Colors.white10),
       ),
       child: Column(
@@ -213,7 +213,7 @@ class StoryScreen extends StatelessWidget {
                 height: 80,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: isActive ? Colors.cyanAccent.withOpacity(0.1) : const Color(0xFF1E1E2C),
+                  color: isActive ? Colors.cyanAccent.withValues(alpha: 0.1) : const Color(0xFF1E1E2C),
                   border: Border.all(
                     color: isCompleted ? Colors.green : (isActive ? Colors.cyanAccent : Colors.grey[800]!),
                     width: isActive ? 3 : 2,

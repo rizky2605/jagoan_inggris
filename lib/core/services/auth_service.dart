@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/user_model.dart';
 
@@ -30,7 +31,7 @@ class AuthService {
       }
       return user;
     } catch (e) {
-      print("Error saat pendaftaran: $e");
+      debugPrint("Error saat pendaftaran: $e");
       return null;
     }
   }
@@ -42,7 +43,7 @@ class AuthService {
           email: email, password: password);
       return result.user;
     } catch (e) {
-      print("Error saat login: $e");
+      debugPrint("Error saat login: $e");
       return null;
     }
   }
