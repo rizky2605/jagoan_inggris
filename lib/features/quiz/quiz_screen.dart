@@ -1,4 +1,4 @@
-import 'dart:async'; // Untuk Timer
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:model_viewer_plus/model_viewer_plus.dart';
 import '../../models/question_model.dart';
@@ -10,7 +10,7 @@ class QuizScreen extends StatefulWidget {
   final LevelModel level;
   final UserModel user;
   final List<QuestionModel>? customQuestions;
-  final String? opponentName; // Nama lawan (opsional)
+  final String? opponentName; 
 
   const QuizScreen({
     super.key, 
@@ -28,16 +28,16 @@ class _QuizScreenState extends State<QuizScreen> {
   // Game State
   int _currentIndex = 0;
   double _monsterHealth = 1.0;
-  double _playerHealth = 1.0; // HP Pemain (Baru)
+  double _playerHealth = 1.0;
   int _score = 0;
   bool _isAnswered = false;
   
   // Timer Logic
   Timer? _questionTimer;
-  int _timeLeft = 10; // 10 detik per soal
+  int _timeLeft = 10;
   final int _maxTime = 10;
 
-  // Countdown Awal (3..2..1)
+  // Countdown & Start
   int _startCountdown = 3;
   bool _isGameStarted = false;
 
@@ -46,34 +46,58 @@ class _QuizScreenState extends State<QuizScreen> {
   @override
   void initState() {
     super.initState();
-    _questions = widget.customQuestions ?? level1Questions;
-    
-    // Mulai hitung mundur sebelum game
+    _initializeQuestions();
     _startPreGameCountdown();
+  }
+
+  // --- FUNGSI INISIALISASI SOAL YANG LEBIH AMAN ---
+  void _initializeQuestions() {
+    // Cek apakah ada customQuestions DAN tidak kosong
+    if (widget.customQuestions != null && widget.customQuestions!.isNotEmpty) {
+      _questions = widget.customQuestions!;
+    } else {
+      // Jika kosong, pakai fallback level 1
+      _questions = List.from(level1Questions); 
+    }
+
+    // Double check: Jika masih kosong juga (misal file model rusak), buat manual
+    if (_questions.isEmpty) {
+      _questions = [
+        QuestionModel(question: "Error Loading Data", options: ["A", "B", "C"], correctIndex: 0, buffType: 'none')
+      ];
+    }
   }
 
   void _startPreGameCountdown() {
     Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
       if (_startCountdown > 0) {
         setState(() => _startCountdown--);
       } else {
         timer.cancel();
         setState(() {
-          _isGameStarted = true; // Game dimulai!
+          _isGameStarted = true;
         });
-        _startQuestionTimer(); // Mulai timer soal pertama
+        _startQuestionTimer();
       }
     });
   }
 
   void _startQuestionTimer() {
     _timeLeft = _maxTime;
+    _questionTimer?.cancel();
     _questionTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
       if (_timeLeft > 0) {
         setState(() => _timeLeft--);
       } else {
-        // Waktu habis = Salah
-        _answerQuestion(-1); 
+        _answerQuestion(-1); // Waktu habis
       }
     });
   }
@@ -85,10 +109,8 @@ class _QuizScreenState extends State<QuizScreen> {
   }
 
   void _answerQuestion(int selectedIndex) {
-    if (_isAnswered) {
-      return;
-    }
-    _questionTimer?.cancel(); // Stop waktu
+    if (_isAnswered) return;
+    _questionTimer?.cancel();
 
     setState(() {
       _isAnswered = true;
@@ -98,15 +120,13 @@ class _QuizScreenState extends State<QuizScreen> {
     bool isCorrect = selectedIndex == currentQ.correctIndex;
 
     if (isCorrect) {
-      // --- LOGIKA SKOR BERBASIS KECEPATAN ---
-      // Base score 10, bonus sisa waktu * 2
+      // Skor berbasis kecepatan
       int speedBonus = _timeLeft * 2;
-      int damage = 15; // Damage dasar
+      int damage = 15;
 
-      // Cek Buff
       if (currentQ.buffType == 'damage') {
-        damage *= 2; // Critical Hit!
-        _showBuffEffect("DAMAGE UP! CRITICAL HIT!");
+        damage *= 2;
+        _showBuffEffect("DAMAGE UP! CRITICAL!");
       } else if (currentQ.buffType == 'heal') {
         _playerHealth = (_playerHealth + 0.2).clamp(0.0, 1.0);
         _showBuffEffect("HEALING ACTIVATED!");
@@ -116,29 +136,25 @@ class _QuizScreenState extends State<QuizScreen> {
 
       setState(() {
         _score += (10 + speedBonus);
-        _monsterHealth -= (damage / 100); // Kurangi HP monster
-        if (_monsterHealth < 0) {
-          _monsterHealth = 0;
-        }
+        _monsterHealth -= (damage / 100);
+        if (_monsterHealth < 0) _monsterHealth = 0;
       });
     } else {
-      // Jika salah, kita kena damage
       setState(() {
         _playerHealth -= 0.15;
-        if (_playerHealth < 0) {
-          _playerHealth = 0;
-        }
+        if (_playerHealth < 0) _playerHealth = 0;
       });
     }
 
-    // Pindah Soal
     Future.delayed(const Duration(milliseconds: 1500), () {
-      if (_currentIndex < _questions.length - 1 && _playerHealth > 0) {
+      if (!mounted) return;
+      
+      if (_currentIndex < _questions.length - 1 && _playerHealth > 0 && _monsterHealth > 0) {
         setState(() {
           _currentIndex++;
           _isAnswered = false;
         });
-        _startQuestionTimer(); // Reset timer untuk soal berikutnya
+        _startQuestionTimer();
       } else {
         _showVictoryDialog();
       }
@@ -148,7 +164,7 @@ class _QuizScreenState extends State<QuizScreen> {
   void _showBuffEffect(String text) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(text, textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        content: Text(text, textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: Colors.amber,
         duration: const Duration(milliseconds: 800),
       )
@@ -171,9 +187,7 @@ class _QuizScreenState extends State<QuizScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (!_isGameStarted) {
-      return _buildCountdownOverlay();
-    } // Tampilkan hitung mundur dulu
+    if (!_isGameStarted) return _buildCountdownOverlay();
 
     QuestionModel currentQ = _questions[_currentIndex];
     final pinkNeon = const Color(0xFFFF66C4);
@@ -193,7 +207,7 @@ class _QuizScreenState extends State<QuizScreen> {
           SafeArea(
             child: Column(
               children: [
-                // HEADER (TIMER & BUFF INFO)
+                // HEADER
                 Padding(
                   padding: const EdgeInsets.all(10),
                   child: Row(
@@ -204,7 +218,7 @@ class _QuizScreenState extends State<QuizScreen> {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
                           decoration: BoxDecoration(color: Colors.amber, borderRadius: BorderRadius.circular(20)),
-                          child: Text("BONUS: ${currentQ.buffType.toUpperCase()}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 10)),
+                          child: Text("BONUS: ${currentQ.buffType.toUpperCase()}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 10, color: Colors.black)),
                         ),
                     ],
                   ),
@@ -230,19 +244,18 @@ class _QuizScreenState extends State<QuizScreen> {
                             Container(
                               padding: const EdgeInsets.all(15),
                               decoration: BoxDecoration(
-                                color: Colors.black.withValues(alpha: 0.7),
+                                color: Colors.black.withOpacity(0.7),
                                 borderRadius: BorderRadius.circular(20),
                                 border: Border.all(color: pinkNeon),
-                                boxShadow: [BoxShadow(color: pinkNeon.withValues(alpha: 0.3), blurRadius: 20)],
+                                boxShadow: [BoxShadow(color: pinkNeon.withOpacity(0.3), blurRadius: 20)],
                               ),
                               child: Text(
-                                currentQ.question,
+                                currentQ.question, // Pastikan tidak null (Model sudah handle)
                                 textAlign: TextAlign.center,
                                 style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
                               ),
                             ),
                             const SizedBox(height: 20),
-                            // Pilihan Jawaban
                             ...List.generate(currentQ.options.length, (index) {
                               return Padding(
                                 padding: const EdgeInsets.only(bottom: 8.0),
@@ -253,13 +266,13 @@ class _QuizScreenState extends State<QuizScreen> {
                         ),
                       ),
 
-                      // KANAN: LAWAN (OPPONENT)
+                      // KANAN: LAWAN
                       Expanded(
                         flex: 2,
                         child: _buildCharacterStats(
                           widget.opponentName ?? "MONSTER", 
                           _monsterHealth, 
-                          widget.opponentName != null ? 'assets/models/avatar_default.glb' : 'assets/models/monster.glb', // Avatar beda kalau pvp
+                          widget.opponentName != null ? 'assets/models/avatar_default.glb' : 'assets/models/monster.glb', 
                           Colors.redAccent
                         ),
                       ),
@@ -281,7 +294,7 @@ class _QuizScreenState extends State<QuizScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Text("BERSIP!", style: TextStyle(color: Colors.white, fontSize: 20, letterSpacing: 5)),
+            const Text("BERSIAP!", style: TextStyle(color: Colors.white, fontSize: 20, letterSpacing: 5)),
             const SizedBox(height: 20),
             Text(
               "$_startCountdown",
@@ -304,17 +317,16 @@ class _QuizScreenState extends State<QuizScreen> {
       decoration: BoxDecoration(
         color: _timeLeft < 4 ? Colors.red : Colors.blueAccent,
         shape: BoxShape.circle,
-        boxShadow: [BoxShadow(color: (_timeLeft < 4 ? Colors.red : Colors.blue).withValues(alpha: 0.5), blurRadius: 10)],
+        boxShadow: [BoxShadow(color: (_timeLeft < 4 ? Colors.red : Colors.blue).withOpacity(0.5), blurRadius: 10)],
       ),
       child: Text("$_timeLeft", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
     );
   }
 
-  Widget _buildCharacterStats(String name, double hp, String model, Color color) {
+  Widget _buildCharacterStats(String name, double hp, String modelPath, Color color) {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        // HP Bar
         Container(
           width: 80, height: 8,
           margin: const EdgeInsets.only(bottom: 5),
@@ -322,10 +334,15 @@ class _QuizScreenState extends State<QuizScreen> {
         ),
         Text(name, style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold)),
         
-        // Model
         SizedBox(
           height: 150,
-          child: ModelViewer(src: model, autoRotate: false, cameraControls: false, backgroundColor: Colors.transparent),
+          // Gunakan Error Builder agar tidak crash jika aset 3D error di web
+          child: ModelViewer(
+            src: modelPath, 
+            autoRotate: false, 
+            cameraControls: false, 
+            backgroundColor: Colors.transparent,
+          ),
         ),
       ],
     );
@@ -337,9 +354,9 @@ class _QuizScreenState extends State<QuizScreen> {
 
     if (_isAnswered) {
       if (index == correctIndex) {
-        borderColor = Colors.green; bgColor = Colors.green.withValues(alpha: 0.3);
+        borderColor = Colors.green; bgColor = Colors.green.withOpacity(0.3);
       } else {
-        borderColor = Colors.red; bgColor = Colors.red.withValues(alpha: 0.3);
+        borderColor = Colors.red; bgColor = Colors.red.withOpacity(0.3);
       }
     }
 

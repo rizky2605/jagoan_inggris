@@ -68,9 +68,12 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
         if (!mounted) return; // Cek mounted lagi sebelum navigasi
 
         // 4. Siapkan Soal Acak
-        List<QuestionModel> battleQuestions = List.from(grammarQuestionBank);
-        battleQuestions.shuffle();
-        battleQuestions = battleQuestions.take(5).toList();
+        List<QuestionModel> battleQuestions = [];
+        if (grammarQuestionBank.isNotEmpty) {
+           battleQuestions = List.from(grammarQuestionBank);
+           battleQuestions.shuffle();
+           battleQuestions = battleQuestions.take(5).toList();
+        }
 
         // 5. Masuk ke Arena
         Navigator.push(
@@ -79,8 +82,8 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
             builder: (context) => QuizScreen(
               level: LevelModel(id: 999, title: "PVP BATTLE", subtitle: "Ranked Match", type: 'pvp'),
               user: myUser,
-              customQuestions: battleQuestions,
-              opponentName: foundOpponent.username, // Kirim nama lawan
+              customQuestions: battleQuestions, // Kirim soal ini
+              opponentName: foundOpponent.username,
             ),
           ),
         );
