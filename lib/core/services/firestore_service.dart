@@ -3,7 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  // Fungsi untuk Update Data User setelah menang Battle
+  // --- 1. UPDATE PROGRESS (Saat Menang Kuis) ---
   Future<void> updateUserProgress({
     required String uid,
     required int goldGained,
@@ -13,42 +13,41 @@ class FirestoreService {
     try {
       DocumentReference userRef = _db.collection('users').doc(uid);
 
-      // Gunakan Transaction agar data aman dan sinkron
       await _db.runTransaction((transaction) async {
         DocumentSnapshot snapshot = await transaction.get(userRef);
 
-        if (!snapshot.exists) {
-          throw Exception("User tidak ditemukan!");
-        }
+        if (!snapshot.exists) throw Exception("User tidak ditemukan!");
 
-        // 1. Ambil data saat ini
-        int currentGold = snapshot.get('gold') ?? 0;
-        int currentXp = snapshot.get('current_xp') ?? 0;
-        int currentMaxXp = snapshot.get('max_xp') ?? 1000;
-        int currentLevel = snapshot.get('level') ?? 1;
-        int lastCompleted = snapshot.get('last_completed_level') ?? 0;
+        // AMBIL DATA DENGAN AMAN (Cast ke Map dulu)
+        // Cara ini tidak akan error meskipun field belum ada di database
+        Map<String, dynamic> data = snapshot.data() as Map<String, dynamic>;
 
-        // 2. Hitung penambahan
+        int currentGold = data['gold'] ?? 0;
+        int currentXp = data['current_xp'] ?? 0;
+        int currentMaxXp = data['max_xp'] ?? 1000;
+        int currentLevel = data['level'] ?? 1;
+        int lastCompleted = data['last_completed_level'] ?? 0;
+
+        // Logika Penambahan
         int newGold = currentGold + goldGained;
         int newXp = currentXp + xpGained;
         int newLevel = currentLevel;
         int newMaxXp = currentMaxXp;
 
-        // 3. Logika Naik Level (Level Up)
-        // Jika XP penuh, level naik dan sisa XP dibawa ke level baru
+        // Logika Naik Level
         while (newXp >= newMaxXp) {
           newLevel += 1;
-          newXp = newXp - newMaxXp; 
-          newMaxXp = (newMaxXp * 1.2).toInt(); // Target XP makin susah (naik 20%)
+          newXp = newXp - newMaxXp;
+          newMaxXp = (newMaxXp * 1.2).toInt();
         }
 
-        // 4. Buka Level Selanjutnya (Story Unlock)
+        // Unlock Level
         int newLastCompleted = lastCompleted;
         if (currentLevelId > lastCompleted) {
           newLastCompleted = currentLevelId;
         }
 
-        // 5. Update ke Firebase
+        // Update Transaksi
         transaction.update(userRef, {
           'gold': newGold,
           'current_xp': newXp,
@@ -62,7 +61,8 @@ class FirestoreService {
       rethrow;
     }
   }
-  // --- FUNGSI BELI ITEM (SHOP) ---
+
+  // --- 2. FUNGSI BELI ITEM (Perbaikan Utama Disini) ---
   Future<void> purchaseItem(String uid, String itemId, int price) async {
     DocumentReference userRef = _db.collection('users').doc(uid);
 
@@ -70,30 +70,36 @@ class FirestoreService {
       DocumentSnapshot snapshot = await transaction.get(userRef);
       if (!snapshot.exists) throw Exception("User not found!");
 
-      int currentGold = snapshot.get('gold') ?? 0;
-      List<dynamic> ownedItems = snapshot.get('owned_items') ?? [];
+      // SAFE DATA ACCESS
+      // Mengambil data sebagai Map agar tidak crash jika field 'owned_items' hilang
+      Map<String, dynamic> data = snapshot.data() as Map<String, dynamic>;
 
-      // Cek apakah item sudah punya?
+      int currentGold = data['gold'] ?? 0;
+      
+      // Jika 'owned_items' belum ada, kita anggap list kosong
+      List<dynamic> rawItems = data['owned_items'] ?? [];
+      List<String> ownedItems = List<String>.from(rawItems);
+
+      // Cek Kepemilikan
       if (ownedItems.contains(itemId)) {
-        throw Exception("Anda sudah memiliki item ini!");
+        throw Exception("Barang sudah dimiliki!");
       }
 
-      // Cek uang cukup?
+      // Cek Saldo
       if (currentGold < price) {
-        throw Exception("Gold tidak cukup!");
+        throw Exception("Gold tidak cukup! Main game lagi yuk.");
       }
 
-      // Proses Transaksi
+      // Eksekusi Pembelian
       transaction.update(userRef, {
-        'gold': currentGold - price, // Kurangi Gold
-        'owned_items': FieldValue.arrayUnion([itemId]), // Tambah Item
+        'gold': currentGold - price,
+        'owned_items': FieldValue.arrayUnion([itemId]), // Tambahkan item baru
       });
     });
   }
 
-  // --- FUNGSI PAKAI ITEM (EQUIP) ---
+  // --- 3. FUNGSI PAKAI ITEM ---
   Future<void> equipItem(String uid, String category, String itemId) async {
-    // category: 'body', 'weapon', atau 'wings'
     await _db.collection('users').doc(uid).update({
       'equipped_loadout.$category': itemId,
     });
