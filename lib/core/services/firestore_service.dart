@@ -62,4 +62,40 @@ class FirestoreService {
       rethrow;
     }
   }
+  // --- FUNGSI BELI ITEM (SHOP) ---
+  Future<void> purchaseItem(String uid, String itemId, int price) async {
+    DocumentReference userRef = _db.collection('users').doc(uid);
+
+    await _db.runTransaction((transaction) async {
+      DocumentSnapshot snapshot = await transaction.get(userRef);
+      if (!snapshot.exists) throw Exception("User not found!");
+
+      int currentGold = snapshot.get('gold') ?? 0;
+      List<dynamic> ownedItems = snapshot.get('owned_items') ?? [];
+
+      // Cek apakah item sudah punya?
+      if (ownedItems.contains(itemId)) {
+        throw Exception("Anda sudah memiliki item ini!");
+      }
+
+      // Cek uang cukup?
+      if (currentGold < price) {
+        throw Exception("Gold tidak cukup!");
+      }
+
+      // Proses Transaksi
+      transaction.update(userRef, {
+        'gold': currentGold - price, // Kurangi Gold
+        'owned_items': FieldValue.arrayUnion([itemId]), // Tambah Item
+      });
+    });
+  }
+
+  // --- FUNGSI PAKAI ITEM (EQUIP) ---
+  Future<void> equipItem(String uid, String category, String itemId) async {
+    // category: 'body', 'weapon', atau 'wings'
+    await _db.collection('users').doc(uid).update({
+      'equipped_loadout.$category': itemId,
+    });
+  }
 }
