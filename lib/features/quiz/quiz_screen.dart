@@ -3,6 +3,7 @@ import 'package:model_viewer_plus/model_viewer_plus.dart';
 import '../../models/question_model.dart';
 import '../../models/level_model.dart';
 import '../../models/user_model.dart';
+import 'result_screen.dart';
 
 class QuizScreen extends StatefulWidget {
   final LevelModel level;
@@ -55,48 +56,15 @@ class _QuizScreenState extends State<QuizScreen> {
   }
 
   void _showVictoryDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => Dialog(
-        backgroundColor: Colors.transparent,
-        child: Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: const Color(0xFF2A0045),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Colors.cyanAccent, width: 2),
-            boxShadow: [
-              BoxShadow(color: Colors.cyanAccent.withOpacity(0.5), blurRadius: 20)
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text("VICTORY!", style: TextStyle(color: Colors.cyanAccent, fontSize: 24, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 20),
-              Text(
-                "Kamu mengalahkan monster!\nSkor: $_score/${_questions.length}",
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white, fontSize: 16),
-              ),
-              const SizedBox(height: 30),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    Navigator.pop(context);
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFBD00FF),
-                    padding: const EdgeInsets.symmetric(vertical: 15),
-                  ),
-                  child: const Text("KLAIM HADIAH", style: TextStyle(fontWeight: FontWeight.bold)),
-                ),
-              )
-            ],
-          ),
+    // Pindah ke layar hasil untuk memproses hadiah
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ResultScreen(
+          score: _score,
+          totalQuestions: _questions.length,
+          levelId: widget.level.id,
+          user: widget.user,
         ),
       ),
     );
