@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart'; // <--- INI YANG TADI KURANG
 
 class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -18,8 +19,7 @@ class FirestoreService {
 
         if (!snapshot.exists) throw Exception("User tidak ditemukan!");
 
-        // AMBIL DATA DENGAN AMAN (Cast ke Map dulu)
-        // Cara ini tidak akan error meskipun field belum ada di database
+        // AMBIL DATA DENGAN AMAN
         Map<String, dynamic> data = snapshot.data() as Map<String, dynamic>;
 
         int currentGold = data['gold'] ?? 0;
@@ -62,7 +62,7 @@ class FirestoreService {
     }
   }
 
-  // --- 2. FUNGSI BELI ITEM (Perbaikan Utama Disini) ---
+  // --- 2. FUNGSI BELI ITEM (SHOP) ---
   Future<void> purchaseItem(String uid, String itemId, int price) async {
     DocumentReference userRef = _db.collection('users').doc(uid);
 
@@ -70,38 +70,54 @@ class FirestoreService {
       DocumentSnapshot snapshot = await transaction.get(userRef);
       if (!snapshot.exists) throw Exception("User not found!");
 
-      // SAFE DATA ACCESS
-      // Mengambil data sebagai Map agar tidak crash jika field 'owned_items' hilang
       Map<String, dynamic> data = snapshot.data() as Map<String, dynamic>;
-
       int currentGold = data['gold'] ?? 0;
       
-      // Jika 'owned_items' belum ada, kita anggap list kosong
+      // Ambil list item dengan aman
       List<dynamic> rawItems = data['owned_items'] ?? [];
       List<String> ownedItems = List<String>.from(rawItems);
 
-      // Cek Kepemilikan
       if (ownedItems.contains(itemId)) {
         throw Exception("Barang sudah dimiliki!");
       }
 
-      // Cek Saldo
       if (currentGold < price) {
         throw Exception("Gold tidak cukup! Main game lagi yuk.");
       }
 
-      // Eksekusi Pembelian
       transaction.update(userRef, {
         'gold': currentGold - price,
-        'owned_items': FieldValue.arrayUnion([itemId]), // Tambahkan item baru
+        'owned_items': FieldValue.arrayUnion([itemId]),
       });
     });
   }
 
-  // --- 3. FUNGSI PAKAI ITEM ---
+  // --- 3. FUNGSI PAKAI ITEM (EQUIP) ---
   Future<void> equipItem(String uid, String category, String itemId) async {
     await _db.collection('users').doc(uid).update({
       'equipped_loadout.$category': itemId,
+    });
+  }
+
+  // --- 4. FUNGSI LEADERBOARD (MATCHMAKING) ---
+  Stream<List<Map<String, dynamic>>> getLeaderboard() {
+    return _db
+        .collection('users')
+        .orderBy('mmr', descending: true) // Urutkan dari MMR tertinggi
+        .limit(20) // Ambil Top 20 saja
+        .snapshots()
+        .map((snapshot) {
+      return snapshot.docs.map((doc) {
+        final data = doc.data();
+        return {
+          'username': data['username'] ?? 'Unknown',
+          'mmr': data['mmr'] ?? 0,
+          'rank_name': data['rank_name'] ?? 'Bronze',
+          'photoUrl': data['photoUrl'] ?? '',
+          // Di baris inilah kita butuh import firebase_auth
+          'isMe': doc.id == FirebaseAuth.instance.currentUser?.uid, 
+        };
+      }).toList();
     });
   }
 }
