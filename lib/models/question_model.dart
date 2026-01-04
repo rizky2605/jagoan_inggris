@@ -39,3 +39,24 @@ final List<QuestionModel> level1Questions = [
     correctIndex: 2, // "Are"
   ),
 ];
+
+// --- GUDANG SOAL GRAMMAR (Untuk Ulasan Harian) ---
+final List<QuestionModel> grammarQuestionBank = [
+  // LEVEL 1: TO BE
+  QuestionModel(question: "I ____ happy.", options: ["is", "am", "are"], correctIndex: 1),
+  QuestionModel(question: "She ____ my teacher.", options: ["is", "am", "are"], correctIndex: 0),
+  QuestionModel(question: "They ____ students.", options: ["is", "am", "are"], correctIndex: 2),
+  
+  // LEVEL 2: SIMPLE PRESENT
+  QuestionModel(question: "He ____ pizza.", options: ["like", "likes", "liking"], correctIndex: 1),
+  QuestionModel(question: "We ____ to school.", options: ["go", "goes", "going"], correctIndex: 0),
+  QuestionModel(question: "Sun ____ in the east.", options: ["rise", "rises", "rose"], correctIndex: 1),
+
+  // LEVEL 3: ARTICLES
+  QuestionModel(question: "This is ____ apple.", options: ["a", "an", "the"], correctIndex: 1),
+  QuestionModel(question: "I have ____ cat.", options: ["a", "an", "two"], correctIndex: 0),
+  
+  // LEVEL 4: PAST TENSE
+  QuestionModel(question: "I ____ football yesterday.", options: ["play", "played", "playing"], correctIndex: 1),
+  QuestionModel(question: "She ____ to Paris last year.", options: ["go", "went", "gone"], correctIndex: 1),
+];

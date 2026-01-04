@@ -3,6 +3,8 @@ import '../../models/user_model.dart';
 import '../../models/level_model.dart';
 import 'material_screen.dart';
 import 'vocabulary_screen.dart'; // Import layar kosa kata
+import '../quiz/quiz_screen.dart'; // Pastikan import ini ada
+import '../../models/question_model.dart';
 
 class StoryScreen extends StatelessWidget {
   final UserModel user;
@@ -25,16 +27,35 @@ class StoryScreen extends StatelessWidget {
               Expanded(
                 child: _buildTaskCard(
                   context,
-                  title: "Ulangan Harian",
-                  subtitle: "Review Materi",
-                  progress: 0.3, // Contoh progress
+                  title: "Ulasan Harian",
+                  subtitle: "Review Grammar & Materi",
+                  progress: 0.5, // Bisa ambil dari streak
                   colorStart: Colors.blueAccent,
                   colorEnd: Colors.blue[900]!,
-                  btnText: "MULAI",
-                  icon: Icons.shield_outlined,
+                  btnText: "ULAS MATERI",
+                  icon: Icons.book, // Icon Buku
                   onTap: () {
-                    // Nanti diarahkan ke Random Quiz
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Fitur Review segera hadir!")));
+                  List<QuestionModel> dailyQuestions = List.from(grammarQuestionBank); // Copy list biar aman
+                    dailyQuestions.shuffle(); // Acak urutan
+                    dailyQuestions = dailyQuestions.take(5).toList(); // Ambil 5 soal saja
+
+                    // 2. Navigasi ke Quiz Mode Review
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => QuizScreen(
+                          // Kita buat Level 'Palsu' hanya untuk judul di QuizScreen
+                          level: LevelModel(
+                            id: 0, 
+                            title: "DAILY REVIEW", 
+                            subtitle: "Latihan Pemahaman Grammar", 
+                            type: 'review'
+                          ),
+                          user: user,
+                          customQuestions: dailyQuestions, // Kirim soal hasil acakan
+                        ),
+                      ),
+                    );
                   },
                 ),
               ),
@@ -44,15 +65,15 @@ class StoryScreen extends StatelessWidget {
               Expanded(
                 child: _buildTaskCard(
                   context,
-                  title: "Kosa Kata",
-                  subtitle: "5 Kata Baru",
-                  progress: 0.0, // Belum mulai
+                  title: "Bank Kosa Kata",
+                  subtitle: "Hafalan Kata (SRS)",
+                  progress: 0.8, // Bisa ambil statistik hafalan
                   colorStart: const Color(0xFFBD00FF),
                   colorEnd: const Color(0xFF4A0080),
-                  btnText: "PELAJARI",
-                  icon: Icons.menu_book_rounded,
+                  btnText: "HAFALKAN",
+                  icon: Icons.style, // Icon Kartu
                   onTap: () {
-                    // Navigasi ke Vocabulary Screen
+                    // Navigasi ke Vocabulary SRS Screen
                     Navigator.push(
                       context,
                       MaterialPageRoute(builder: (context) => const VocabularyScreen()),

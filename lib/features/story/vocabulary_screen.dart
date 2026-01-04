@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../models/word_model.dart';
+import '../../core/services/vocabulary_service.dart';
+import 'dart:math' as math; // Untuk animasi flip
 
 class VocabularyScreen extends StatefulWidget {
   const VocabularyScreen({super.key});
@@ -9,163 +12,253 @@ class VocabularyScreen extends StatefulWidget {
 }
 
 class _VocabularyScreenState extends State<VocabularyScreen> {
-  final PageController _pageController = PageController();
-  int _currentIndex = 0;
-  final List<WordModel> _words = dailyVocabList; // Ambil dari model
-
+  final VocabularyService _vocabService = VocabularyService();
+  final String uid = FirebaseAuth.instance.currentUser!.uid;
+  
+  // State Kartu
+  bool _isFlipped = false; // Apakah kartu sedang membalik (lihat arti)?
+  
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0F0025), // Background Gelap
+      backgroundColor: const Color(0xFF0F0025),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
-        elevation: 0,
-        title: const Text("Kosa Kata Harian", style: TextStyle(color: Colors.white)),
+        title: const Text("Bank Kosa Kata", style: TextStyle(color: Colors.white)),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
           onPressed: () => Navigator.pop(context),
         ),
       ),
-      body: Column(
-        children: [
-          // Indikator Progress
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-            child: LinearProgressIndicator(
-              value: (_currentIndex + 1) / _words.length,
-              backgroundColor: Colors.white10,
-              color: const Color(0xFFBD00FF), // Ungu Neon
-              minHeight: 6,
-            ),
-          ),
-          
-          Text("${_currentIndex + 1} / ${_words.length}", style: const TextStyle(color: Colors.white54)),
+      body: StreamBuilder<List<WordModel>>(
+        stream: _vocabService.getDueWords(uid),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator(color: Colors.cyanAccent));
+          }
 
-          // Area Flashcard
-          Expanded(
-            child: PageView.builder(
-              controller: _pageController,
-              physics: const NeverScrollableScrollPhysics(), // User harus klik tombol, ga bisa swipe sembarangan
-              itemCount: _words.length,
-              itemBuilder: (context, index) {
-                return _buildFlashCard(_words[index]);
-              },
-            ),
-          ),
+          List<WordModel> words = snapshot.data ?? [];
 
-          // Tombol Navigasi Bawah
-          Padding(
-            padding: const EdgeInsets.all(30),
-            child: SizedBox(
-              width: double.infinity,
-              height: 55,
-              child: ElevatedButton(
-                onPressed: () {
-                  if (_currentIndex < _words.length - 1) {
-                    _pageController.nextPage(
-                      duration: const Duration(milliseconds: 300), 
-                      curve: Curves.easeInOut
-                    );
-                    setState(() => _currentIndex++);
-                  } else {
-                    // Selesai belajar
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text("Hebat! Kosa kata hari ini selesai."), backgroundColor: Colors.green),
-                    );
-                  }
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.cyanAccent,
-                  foregroundColor: Colors.black,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                  elevation: 10,
-                  shadowColor: Colors.cyanAccent.withOpacity(0.5),
-                ),
-                child: Text(
-                  _currentIndex < _words.length - 1 ? "LANJUT" : "SELESAI", 
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)
+          // 1. Jika tidak ada kata yang perlu direview
+          if (words.isEmpty) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.check_circle_outline, size: 80, color: Colors.greenAccent),
+                  const SizedBox(height: 20),
+                  const Text(
+                    "Semua kata aman!",
+                    style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                  const Text(
+                    "Kamu sudah mempelajari semua kata hari ini.\nKembali lagi besok ya!",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.white54),
+                  ),
+                  const SizedBox(height: 30),
+                  ElevatedButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: ElevatedButton.styleFrom(backgroundColor: Colors.cyanAccent),
+                    child: const Text("KEMBALI KE STORY", style: TextStyle(color: Colors.black)),
+                  )
+                ],
+              ),
+            );
+          }
+
+          // 2. Ambil kata paling atas (antrian pertama)
+          WordModel currentWord = words.first;
+
+          return Column(
+            children: [
+              // Progress Bar (Sisa kata hari ini)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text("Antrian: ${words.length}", style: const TextStyle(color: Colors.cyanAccent)),
+                    Text("Level Ingatan: ${currentWord.box}/5", style: const TextStyle(color: Colors.amber)),
+                  ],
                 ),
               ),
-            ),
+
+              // AREA KARTU (Flashcard)
+              Expanded(
+                child: Center(
+                  child: GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _isFlipped = !_isFlipped; // Balik kartu
+                      });
+                    },
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 600),
+                      transitionBuilder: (Widget child, Animation<double> animation) {
+                        final rotateAnim = Tween(begin: math.pi, end: 0.0).animate(animation);
+                        return AnimatedBuilder(
+                          animation: rotateAnim,
+                          child: child,
+                          builder: (context, widget) {
+                            final isUnder = (ValueKey(_isFlipped) != widget?.key);
+                            var tilt = ((animation.value - 0.5).abs() - 0.5) * 0.003;
+                            tilt *= isUnder ? -1.0 : 1.0;
+                            final value = isUnder ? math.min(rotateAnim.value, math.pi / 2) : rotateAnim.value;
+                            return Transform(
+                              transform: Matrix4.rotationY(value)..setEntry(3, 0, tilt),
+                              alignment: Alignment.center,
+                              child: widget,
+                            );
+                          },
+                        );
+                      },
+                      // TAMPILAN DEPAN vs BELAKANG
+                      child: _isFlipped 
+                        ? _buildBackCard(currentWord) // Jawaban (Arti)
+                        : _buildFrontCard(currentWord), // Soal (Kata Inggris)
+                    ),
+                  ),
+                ),
+              ),
+
+              // TOMBOL AKSI (Hanya muncul jika kartu sudah dibalik)
+              if (_isFlipped)
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  child: Row(
+                    children: [
+                      // Tombol Lupa (Merah)
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            _processReview(currentWord, false);
+                          },
+                          icon: const Icon(Icons.close),
+                          label: const Text("LUPA (Ulang)"),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.redAccent,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 15),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 20),
+                      // Tombol Ingat (Hijau)
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            _processReview(currentWord, true);
+                          },
+                          icon: const Icon(Icons.check),
+                          label: const Text("INGAT (Lanjut)"),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.greenAccent,
+                            foregroundColor: Colors.black,
+                            padding: const EdgeInsets.symmetric(vertical: 15),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                // Petunjuk jika belum dibalik
+                const Padding(
+                  padding: EdgeInsets.all(30.0),
+                  child: Text("Ketuk kartu untuk melihat arti", style: TextStyle(color: Colors.white54)),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  void _processReview(WordModel word, bool remembered) async {
+    // Reset flip biar kartu berikutnya mulai dari depan
+    setState(() => _isFlipped = false);
+    
+    // Simpan ke database
+    await _vocabService.processWordReview(uid, word, remembered);
+    
+    // Feedback visual
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(remembered ? "Bagus! Kata disimpan." : "Tidak apa, kita ulang lagi besok."),
+          backgroundColor: remembered ? Colors.green : Colors.orange,
+          duration: const Duration(milliseconds: 800),
+        )
+      );
+    }
+  }
+
+  // --- DESAIN KARTU DEPAN (INGGRIS) ---
+  Widget _buildFrontCard(WordModel word) {
+    return Container(
+      key: const ValueKey(false),
+      width: 300,
+      height: 450,
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E1E2C),
+        borderRadius: BorderRadius.circular(25),
+        border: Border.all(color: Colors.cyanAccent, width: 2),
+        boxShadow: [BoxShadow(color: Colors.cyanAccent.withOpacity(0.3), blurRadius: 20)],
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.translate, size: 50, color: Colors.white24),
+          const SizedBox(height: 30),
+          Text(
+            word.word,
+            style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold),
+            textAlign: TextAlign.center,
           ),
+          const SizedBox(height: 10),
+          Text(
+            word.category, // Noun, Verb, etc
+            style: const TextStyle(color: Colors.cyanAccent, fontSize: 14, letterSpacing: 2),
+          ),
+          const SizedBox(height: 20),
+          // Icon audio kecil (hiasan)
+          const Icon(Icons.volume_up_rounded, color: Colors.white54),
+          Text(word.pronunciation, style: const TextStyle(color: Colors.white38)),
         ],
       ),
     );
   }
 
-  // Desain Kartu Kata
-  Widget _buildFlashCard(WordModel word) {
+  // --- DESAIN KARTU BELAKANG (ARTI) ---
+  Widget _buildBackCard(WordModel word) {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-      padding: const EdgeInsets.all(30),
+      key: const ValueKey(true),
+      width: 300,
+      height: 450,
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            const Color(0xFF2A0045),
-            Colors.black.withOpacity(0.8),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(30),
-        border: Border.all(color: Colors.white10),
-        boxShadow: [
-          BoxShadow(color: const Color(0xFFBD00FF).withOpacity(0.2), blurRadius: 30, spreadRadius: 5)
-        ],
+        color: const Color(0xFF2A0045), // Warna beda biar kerasa dibalik
+        borderRadius: BorderRadius.circular(25),
+        border: Border.all(color: const Color(0xFFBD00FF), width: 2),
+        boxShadow: [BoxShadow(color: const Color(0xFFBD00FF).withOpacity(0.3), blurRadius: 20)],
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          // Kategori (Badge Kecil)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: Colors.white10,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.white24),
-            ),
-            child: Text(word.category.toUpperCase(), style: const TextStyle(color: Colors.cyanAccent, fontSize: 12, letterSpacing: 1.5)),
-          ),
-          
-          const SizedBox(height: 40),
-
-          // Kata Utama (Inggris)
-          Text(
-            word.word,
-            style: const TextStyle(color: Colors.white, fontSize: 36, fontWeight: FontWeight.bold),
-            textAlign: TextAlign.center,
-          ),
-          
-          // Cara Baca
-          Text(
-            word.pronunciation,
-            style: const TextStyle(color: Colors.white54, fontSize: 16, fontStyle: FontStyle.italic),
-          ),
-
-          const Divider(color: Colors.white12, height: 60),
-
-          // Arti (Indonesia)
+          const Text("Artinya:", style: TextStyle(color: Colors.white54)),
+          const SizedBox(height: 15),
           Text(
             word.meaning,
-            style: const TextStyle(color: Color(0xFFBD00FF), fontSize: 24, fontWeight: FontWeight.bold), // Warna Ungu
+            style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold),
             textAlign: TextAlign.center,
           ),
-
-          const SizedBox(height: 30),
-
-          // Contoh Kalimat
-          Container(
-            padding: const EdgeInsets.all(15),
-            decoration: BoxDecoration(
-              color: Colors.black38,
-              borderRadius: BorderRadius.circular(15),
-              border: Border.all(color: Colors.white10)
-            ),
+          const Divider(color: Colors.white24, height: 40, indent: 40, endIndent: 40),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Text(
               "\"${word.exampleSentence}\"",
+              style: const TextStyle(color: Colors.white70, fontStyle: FontStyle.italic),
               textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.white70, fontSize: 14, height: 1.5),
             ),
           ),
         ],
