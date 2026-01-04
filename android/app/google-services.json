@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "753223088412",
+    "project_id": "jagoan-inggris",
+    "storage_bucket": "jagoan-inggris.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:753223088412:android:f6bceab142fed25582a2d9",
+        "android_client_info": {
+          "package_name": "com.example.jagoan_inggris"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDRkiZY7AqXZQtYUKsdAEW9fqH396xzfoo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
