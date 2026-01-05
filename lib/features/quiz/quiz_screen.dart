@@ -244,10 +244,10 @@ class _QuizScreenState extends State<QuizScreen> {
                             Container(
                               padding: const EdgeInsets.all(15),
                               decoration: BoxDecoration(
-                                color: Colors.black.withOpacity(0.7),
+                                color: Colors.black.withValues(alpha: 0.7),
                                 borderRadius: BorderRadius.circular(20),
                                 border: Border.all(color: pinkNeon),
-                                boxShadow: [BoxShadow(color: pinkNeon.withOpacity(0.3), blurRadius: 20)],
+                                boxShadow: [BoxShadow(color: pinkNeon.withValues(alpha: 0.3), blurRadius: 20)],
                               ),
                               child: Text(
                                 currentQ.question, // Pastikan tidak null (Model sudah handle)
@@ -317,7 +317,7 @@ class _QuizScreenState extends State<QuizScreen> {
       decoration: BoxDecoration(
         color: _timeLeft < 4 ? Colors.red : Colors.blueAccent,
         shape: BoxShape.circle,
-        boxShadow: [BoxShadow(color: (_timeLeft < 4 ? Colors.red : Colors.blue).withOpacity(0.5), blurRadius: 10)],
+        boxShadow: [BoxShadow(color: (_timeLeft < 4 ? Colors.red : Colors.blue).withValues(alpha: 0.5), blurRadius: 10)],
       ),
       child: Text("$_timeLeft", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
     );
@@ -354,9 +354,9 @@ class _QuizScreenState extends State<QuizScreen> {
 
     if (_isAnswered) {
       if (index == correctIndex) {
-        borderColor = Colors.green; bgColor = Colors.green.withOpacity(0.3);
+        borderColor = Colors.green; bgColor = Colors.green.withValues(alpha: 0.3);
       } else {
-        borderColor = Colors.red; bgColor = Colors.red.withOpacity(0.3);
+        borderColor = Colors.red; bgColor = Colors.red.withValues(alpha: 0.3);
       }
     }
 
