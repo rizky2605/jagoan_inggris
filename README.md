@@ -18,9 +18,6 @@ Untuk memahami cara kerja aplikasi dan melihat tampilan antarmuka secara mendeta
 
 * **📷 Galeri Foto Dokumentasi dan Buku Panduan Pengguna (PDF):** [Klik di Sini](https://drive.google.com/drive/folders/1HUJcejF0LHDGyI-CdFaZFrGLxX9LyOFq?usp=sharing)
 
-
-> *Catatan: Pastikan untuk mengganti tautan di atas dengan link penyimpanan Anda (seperti Google Drive atau folder di GitHub ini).*
-
 ## 🛠️ Teknologi yang Digunakan
 
 - **Framework:** [Flutter](https://flutter.dev/) (Version 3.27+)
