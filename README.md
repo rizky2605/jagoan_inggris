@@ -1,16 +1,55 @@
-# jagoan_inggris
+# 🎮 Jagoan Inggris
 
-A new Flutter project.
+**Jagoan Inggris** adalah aplikasi gamifikasi pembelajaran bahasa Inggris berbasis Flutter. Aplikasi ini menggabungkan konsep RPG Battle dengan kuis tata bahasa (grammar) untuk membuat pengalaman belajar menjadi lebih seru dan kompetitif.
 
-## Getting Started
+## 🚀 Fitur Utama
 
-This project is a starting point for a Flutter application.
+- **PVP Battle Arena:** Bertarung melawan pemain lain atau monster dalam duel cerdas.
+- **Dynamic Quiz System:** Soal tata bahasa yang menantang dengan sistem poin berbasis kecepatan menjawab.
+- **Buff & Debuff System:** - ⚔️ **Damage:** Memberikan serangan kritikal ke lawan.
+  - 🛡️ **Defense:** Melindungi nyawa dari serangan lawan.
+  - 💊 **Heal:** Menambah HP saat berhasil menjawab soal tertentu.
+- **3D Avatar Integration:** Menggunakan `model_viewer_plus` untuk menampilkan karakter 3D yang interaktif.
+- **Real-time Matchmaking:** Mencari lawan secara otomatis menggunakan Firebase Cloud Firestore.
 
-A few resources to get you started if this is your first Flutter project:
+## 📚 Dokumentasi & Panduan
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+Untuk memahami cara kerja aplikasi dan melihat tampilan antarmuka secara mendetail, silakan akses tautan di bawah ini:
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+* **📷 Galeri Foto Dokumentasi dan Buku Panduan Pengguna (PDF):** [Klik di Sini](https://drive.google.com/drive/folders/1HUJcejF0LHDGyI-CdFaZFrGLxX9LyOFq?usp=sharing)
+
+
+> *Catatan: Pastikan untuk mengganti tautan di atas dengan link penyimpanan Anda (seperti Google Drive atau folder di GitHub ini).*
+
+## 🛠️ Teknologi yang Digunakan
+
+- **Framework:** [Flutter](https://flutter.dev/) (Version 3.27+)
+- **Database & Auth:** [Firebase](https://firebase.google.com/) (Firestore & Auth)
+- **3D Rendering:** [Model Viewer Plus](https://pub.dev/packages/model_viewer_plus)
+- **State Management:** StatefulWidget (Clean Logic)
+
+## 💻 Cara Menjalankan Proyek
+
+1.  **Clone Repository:**
+    ```bash
+    git clone [https://github.com/rizky2065/jagoan_Inggris.git](https://github.com/rizky2065/jagoan_Inggris.git)
+    ```
+2.  **Install Dependencies:**
+    ```bash
+    flutter pub get
+    ```
+3.  **Konfigurasi Firebase:**
+    * Pastikan Anda sudah menjalankan `flutterfire configure` untuk menghubungkan proyek dengan akun Firebase Anda.
+4.  **Jalankan Aplikasi:**
+    ```bash
+    flutter run
+    ```
+
+## 📂 Struktur Folder Utama
+
+```text
+lib/
+├── core/           # Service (Auth, Firestore, Theme)
+├── features/       # Fitur (Auth, Avatar, Matchmaking, Quiz, Story)
+├── models/         # Data Models (User, Question, Level)
+└── main.dart       # Entry Point aplikasi
