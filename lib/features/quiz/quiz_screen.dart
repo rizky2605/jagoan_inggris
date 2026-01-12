@@ -51,19 +51,24 @@ class _QuizScreenState extends State<QuizScreen> {
   }
 
   // --- FUNGSI INISIALISASI SOAL YANG LEBIH AMAN ---
+  // --- FUNGSI INISIALISASI SOAL (PERBAIKAN) ---
   void _initializeQuestions() {
-    // Cek apakah ada customQuestions DAN tidak kosong
+    // 1. Cek apakah ini mode Battle/Custom (ada customQuestions)
     if (widget.customQuestions != null && widget.customQuestions!.isNotEmpty) {
       _questions = widget.customQuestions!;
-    } else {
-      // Jika kosong, pakai fallback level 1
-      _questions = List.from(level1Questions); 
+    } 
+    // 2. Jika bukan, ambil soal dari Database Map berdasarkan Level ID user
+    else {
+      // Kita panggil map 'levelQuestions' dari question_model.dart
+      // Gunakan widget.level.id untuk mengambil soal yang sesuai levelnya
+      // Jika soal untuk level itu belum ada, fallback ke level 1 agar tidak crash
+      _questions = levelQuestions[widget.level.id] ?? levelQuestions[1]!;
     }
 
-    // Double check: Jika masih kosong juga (misal file model rusak), buat manual
+    // 3. Safety check terakhir (jika data benar-benar kosong)
     if (_questions.isEmpty) {
       _questions = [
-        QuestionModel(question: "Error Loading Data", options: ["A", "B", "C"], correctIndex: 0, buffType: 'none')
+        QuestionModel(question: "Soal belum tersedia", options: ["OK"], correctIndex: 0, buffType: 'none')
       ];
     }
   }
