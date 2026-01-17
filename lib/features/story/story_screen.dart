@@ -3,9 +3,10 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../models/user_model.dart';
 import '../../models/level_model.dart';
 import '../../models/question_model.dart';
-import '../quiz/quiz_screen.dart';
-import 'vocabulary_screen.dart';
 import 'material_screen.dart';
+import 'review_screen.dart'; 
+import 'vocabulary_menu_screen.dart'; // Pastikan ini ada
+
 
 class StoryScreen extends StatefulWidget {
   final UserModel user;
@@ -17,6 +18,8 @@ class StoryScreen extends StatefulWidget {
 }
 
 class _StoryScreenState extends State<StoryScreen> {
+  // Field _firestoreService dihapus jika tidak digunakan langsung
+  
   int _displayStageIndex = 0; 
   int _maxUnlockedStageIndex = 0;
 
@@ -34,15 +37,13 @@ class _StoryScreenState extends State<StoryScreen> {
     _displayStageIndex = _maxUnlockedStageIndex;
   }
 
-  // --- LOGIKA WARNA BERDASARKAN STAGE (PROFESIONAL) ---
+  // --- LOGIKA WARNA STAGE ---
   Color _getStageColor(int levelId) {
-    // Jika Boss Level (Kelipatan 5), Warnanya Merah Bahaya
-    if (levelId % 5 == 0) return const Color(0xFFFF5252); // Red Accent
-
-    if (levelId <= 5) return const Color(0xFF64FFDA); // Cyan (Beginner)
-    if (levelId <= 10) return const Color(0xFF69F0AE); // Green (Rookie)
-    if (levelId <= 15) return const Color(0xFFFFAB40); // Orange (Intermediate)
-    return const Color(0xFFE040FB); // Purple (Advanced)
+    if (levelId % 5 == 0) return const Color(0xFFFF5252); 
+    if (levelId <= 5) return const Color(0xFF64FFDA); 
+    if (levelId <= 10) return const Color(0xFF69F0AE); 
+    if (levelId <= 15) return const Color(0xFFFFAB40); 
+    return const Color(0xFFE040FB); 
   }
 
   String _getStageName(int stageIndex) {
@@ -61,8 +62,11 @@ class _StoryScreenState extends State<StoryScreen> {
         .where((lvl) => lvl.id >= startId && lvl.id <= endId)
         .toList();
 
-    // Ambil warna tema stage saat ini untuk mewarnai Judul & Navigasi
     Color currentStageThemeColor = _getStageColor(startId); 
+
+    // Hitung Progress
+    double quizProgress = (widget.user.dailyQuizScore / 100).clamp(0.0, 1.0);
+    double vocabProgress = (widget.user.dailyWordCount / widget.user.dailyWordTarget).clamp(0.0, 1.0);
 
     return Scaffold(
       backgroundColor: const Color(0xFF1E1E2C),
@@ -91,10 +95,10 @@ class _StoryScreenState extends State<StoryScreen> {
                     Expanded(
                       child: _buildTaskCard(
                         context,
-                        title: "Review",
-                        subtitle: "Grammar",
-                        infoText: "5 mnt",
-                        progress: 0.75,
+                        title: "Daily Review",
+                        subtitle: "Materi Yang Lewat",
+                        infoText: "Skor: ${widget.user.dailyQuizScore}",
+                        progress: quizProgress,
                         colors: [const Color(0xFF448AFF), const Color(0xFF2962FF)],
                         btnText: "MULAI",
                         btnColor: const Color(0xFFFFC107),
@@ -107,15 +111,15 @@ class _StoryScreenState extends State<StoryScreen> {
                         context,
                         title: "Kosa Kata",
                         subtitle: "Hafalan Baru",
-                        infoText: "10 Kata",
-                        progress: 0.5,
+                        infoText: "${widget.user.dailyWordCount}/${widget.user.dailyWordTarget}",
+                        progress: vocabProgress,
                         colors: [const Color(0xFFE040FB), const Color(0xFFAA00FF)],
                         btnText: "HAFALKAN",
                         btnColor: const Color(0xFFFFC107),
                         onTap: () {
                           Navigator.push(
                             context,
-                            MaterialPageRoute(builder: (context) => const VocabularyScreen()),
+                            MaterialPageRoute(builder: (context) => const VocabularyMenuScreen()),
                           );
                         },
                       ),
@@ -126,7 +130,7 @@ class _StoryScreenState extends State<StoryScreen> {
 
               const SizedBox(height: 40),
 
-              // --- 2. JUDUL STAGE & NAVIGASI ---
+              // --- 2. JUDUL STAGE ---
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: Row(
@@ -140,7 +144,6 @@ class _StoryScreenState extends State<StoryScreen> {
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    
                     Container(
                       height: 36,
                       padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -208,17 +211,11 @@ class _StoryScreenState extends State<StoryScreen> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: List.generate(4, (index) {
                       bool isUnlocked = index <= _maxUnlockedStageIndex;
-                      // Tentukan warna dot berdasarkan stage index-nya
-                      // Agar dot 1 warnanya Cyan, Dot 2 Hijau, dst.
                       Color dotColor = _getStageColor((index * 5) + 1);
-                      if (index > 0 && index % 1 == 0 && index * 5 + 1 % 5 == 0) {
-                         // Logic adjustment for boss coloring fix in helper function
-                         // Just force standard colors for dots:
-                         if (index == 0) dotColor = const Color(0xFF64FFDA);
-                         if (index == 1) dotColor = const Color(0xFF69F0AE);
-                         if (index == 2) dotColor = const Color(0xFFFFAB40);
-                         if (index == 3) dotColor = const Color(0xFFE040FB);
-                      }
+                      if (index == 0) dotColor = const Color(0xFF64FFDA);
+                      if (index == 1) dotColor = const Color(0xFF69F0AE);
+                      if (index == 2) dotColor = const Color(0xFFFFAB40);
+                      if (index == 3) dotColor = const Color(0xFFE040FB);
 
                       return Container(
                         margin: const EdgeInsets.symmetric(horizontal: 4),
@@ -241,23 +238,53 @@ class _StoryScreenState extends State<StoryScreen> {
     );
   }
 
-  // --- WIDGET ITEM LEVEL (TOMBOL PLAY PROFESIONAL) ---
+  // --- WIDGET ITEM LEVEL ---
   Widget _buildLevelItem(BuildContext context, LevelModel level) {
     bool isLocked = level.id > (widget.user.lastCompletedLevel + 1);
     bool isCurrent = level.id == widget.user.lastCompletedLevel + 1;
     bool isBoss = level.id % 5 == 0;
 
-    // AMBIL WARNA DINAMIS SESUAI STAGE
+    bool isReviewDue = false;
+    if (widget.user.levelsProgress.containsKey(level.id.toString())) {
+       var progress = widget.user.levelsProgress[level.id.toString()];
+       if (progress != null && progress['nextReviewDate'] != null) {
+          DateTime nextReview = DateTime.parse(progress['nextReviewDate']);
+          if (DateTime.now().isAfter(nextReview)) {
+             isReviewDue = true;
+          }
+       }
+    }
+
     Color stageColor = _getStageColor(level.id);
-    Color displayColor = isLocked ? Colors.white10 : stageColor;
-    
+    Color displayColor = isLocked 
+        ? Colors.white10 
+        : (isReviewDue ? const Color(0xFFFF9100) : stageColor); 
+
     double circleSize = 45.0;
 
     return GestureDetector(
       onTap: () {
         if (isLocked) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Selesaikan level sebelumnya dulu!")));
+        } else if (isReviewDue) {
+          // MODE REVIEW SPECIFIC
+          List<QuestionModel> reviewQuestions = levelQuestions[level.id] ?? [];
+          if (reviewQuestions.isEmpty) {
+             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Soal tidak ditemukan untuk level ini.")));
+             return;
+          }
+          reviewQuestions.shuffle();
+          
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => ReviewScreen(
+              user: widget.user,
+              questions: reviewQuestions,
+              levelId: level.id.toString(),
+            )),
+          );
         } else {
+          // MODE BELAJAR (NORMAL)
           Navigator.push(
             context,
             MaterialPageRoute(builder: (context) => MaterialScreen(level: level, user: widget.user)),
@@ -265,33 +292,33 @@ class _StoryScreenState extends State<StoryScreen> {
         }
       },
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.start,
         children: [
-          // LINGKARAN PEMBUNGKUS
           Container(
             width: circleSize, 
             height: circleSize,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: isCurrent ? displayColor : Colors.transparent, // Jika aktif, isi penuh
+              color: isCurrent || isReviewDue ? displayColor : Colors.transparent,
               border: Border.all(
                 color: displayColor,
-                width: isCurrent ? 0 : 2,
+                width: (isCurrent || isReviewDue) ? 0 : 2,
               ),
-              boxShadow: isCurrent 
+              boxShadow: (isCurrent || isReviewDue)
                   ? [BoxShadow(color: displayColor.withOpacity(0.6), blurRadius: 15, spreadRadius: 2)] 
                   : [],
             ),
             child: Center(
               child: isLocked
                   ? const Icon(Icons.lock, color: Colors.white24, size: 20)
-                  : (isBoss 
-                      ? const Icon(Icons.star_rounded, color: Colors.white, size: 24) // Boss pakai Bintang
-                      : Icon(
-                          Icons.play_arrow_rounded, // Level Biasa pakai Play
-                          // Jika aktif (background berwarna), ikon hitam. Jika belum (outline), ikon berwarna.
-                          color: isCurrent ? Colors.black : displayColor, 
-                          size: 26,
+                  : (isReviewDue
+                      ? const Icon(Icons.history_edu, color: Colors.white, size: 22) 
+                      : (isBoss 
+                          ? const Icon(Icons.star_rounded, color: Colors.white, size: 24) 
+                          : Icon(
+                              Icons.play_arrow_rounded, 
+                              color: isCurrent ? Colors.black : displayColor, 
+                              size: 26,
+                            )
                         )
                     ),
             ),
@@ -300,31 +327,76 @@ class _StoryScreenState extends State<StoryScreen> {
           const SizedBox(height: 10),
           
           Text(
-            "Level ${level.id}", 
+            isReviewDue ? "REVIEW!" : "Level ${level.id}", 
             style: GoogleFonts.poppins(
-              color: isCurrent ? stageColor : Colors.white38, // Teks menyala jika level saat ini
+              color: isReviewDue ? const Color(0xFFFF9100) : (isCurrent ? stageColor : Colors.white38),
               fontSize: 10, 
               fontWeight: FontWeight.bold,
             ),
           ),
           
-          const SizedBox(height: 4),
-          Text(
-            level.subtitle,
-            textAlign: TextAlign.center,
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
-            style: GoogleFonts.poppins(
-              color: isLocked ? Colors.white12 : (isBoss ? Colors.redAccent : Colors.white70),
-              fontSize: 9,
-              height: 1.2,
+          if (!isReviewDue) ...[
+            const SizedBox(height: 4),
+            Text(
+              level.subtitle,
+              textAlign: TextAlign.center,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.poppins(
+                color: isLocked ? Colors.white12 : (isBoss ? Colors.redAccent : Colors.white70),
+                fontSize: 9,
+                height: 1.2,
+              ),
             ),
-          ),
+          ]
         ],
       ),
     );
   }
 
+  // --- FUNGSI MASUK DAILY REVIEW (PERBAIKAN TOTAL: DINAMIS) ---
+  void _startDailyReview(BuildContext context) {
+    // 1. Kumpulkan SEMUA soal dari Level 1 sampai Level Terakhir User
+    List<QuestionModel> combinedQuestions = [];
+    int maxLevel = widget.user.lastCompletedLevel;
+
+    if (maxLevel < 1) {
+       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Selesaikan Level 1 dulu!")));
+       return;
+    }
+
+    // Loop dari level 1 sampai level yang sudah tamat
+    for (int i = 1; i <= maxLevel; i++) {
+      if (levelQuestions.containsKey(i)) {
+        // Gabungkan soal level tersebut ke list utama
+        combinedQuestions.addAll(levelQuestions[i]!);
+      }
+    }
+
+    // 2. Cek apakah ada soal
+    if (combinedQuestions.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Belum ada materi tersedia.")));
+      return;
+    }
+
+    // 3. Acak dan Ambil 10
+    combinedQuestions.shuffle();
+    List<QuestionModel> sessionQuestions = combinedQuestions.length > 10 
+        ? combinedQuestions.take(10).toList() 
+        : combinedQuestions;
+    
+    // 4. Buka ReviewScreen
+    Navigator.push(
+      context, 
+      MaterialPageRoute(builder: (context) => ReviewScreen(
+        user: widget.user,
+        questions: sessionQuestions,
+        levelId: "daily_review", 
+      ))
+    );
+  }
+
+  // --- WIDGET KARTU TUGAS ---
   Widget _buildTaskCard(
     BuildContext context, {
     required String title,
@@ -350,7 +422,7 @@ class _StoryScreenState extends State<StoryScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(title, style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
-              if (infoText.isNotEmpty) Text(infoText, style: const TextStyle(color: Colors.white70, fontSize: 9)),
+              Text(infoText, style: const TextStyle(color: Colors.white70, fontSize: 9)),
             ],
           ),
           Text(subtitle, style: const TextStyle(color: Colors.white70, fontSize: 9)),
@@ -375,12 +447,5 @@ class _StoryScreenState extends State<StoryScreen> {
         ],
       ),
     );
-  }
-
-  void _startDailyReview(BuildContext context) {
-    List<QuestionModel> dailyQuestions = List.from(grammarQuestionBank);
-    dailyQuestions.shuffle();
-    if (dailyQuestions.length > 5) dailyQuestions = dailyQuestions.take(5).toList();
-    Navigator.push(context, MaterialPageRoute(builder: (context) => QuizScreen(level: LevelModel(id: 0, title: "DAILY REVIEW", subtitle: "Latihan Harian", type: 'review'), user: widget.user, customQuestions: dailyQuestions)));
   }
 }

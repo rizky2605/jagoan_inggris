@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:math' as math; // Untuk animasi flip
+
 import '../../models/word_model.dart';
 import '../../core/services/vocabulary_service.dart';
-import 'dart:math' as math; // Untuk animasi flip
 
 class VocabularyScreen extends StatefulWidget {
   const VocabularyScreen({super.key});
@@ -24,6 +25,7 @@ class _VocabularyScreenState extends State<VocabularyScreen> {
       backgroundColor: const Color(0xFF0F0025),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
+        elevation: 0,
         title: const Text("Bank Kosa Kata", style: TextStyle(color: Colors.white)),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
@@ -35,6 +37,10 @@ class _VocabularyScreenState extends State<VocabularyScreen> {
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator(color: Colors.cyanAccent));
+          }
+
+          if (snapshot.hasError) {
+             return Center(child: Text("Error: ${snapshot.error}", style: const TextStyle(color: Colors.white)));
           }
 
           List<WordModel> words = snapshot.data ?? [];
@@ -51,6 +57,7 @@ class _VocabularyScreenState extends State<VocabularyScreen> {
                     "Semua kata aman!",
                     style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
                   ),
+                  const SizedBox(height: 10),
                   const Text(
                     "Kamu sudah mempelajari semua kata hari ini.\nKembali lagi besok ya!",
                     textAlign: TextAlign.center,
@@ -60,7 +67,14 @@ class _VocabularyScreenState extends State<VocabularyScreen> {
                   ElevatedButton(
                     onPressed: () => Navigator.pop(context),
                     style: ElevatedButton.styleFrom(backgroundColor: Colors.cyanAccent),
-                    child: const Text("KEMBALI KE STORY", style: TextStyle(color: Colors.black)),
+                    child: const Text("KEMBALI KE STORY", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+                  ),
+                  
+                  // [DEBUG ONLY] Tombol Tambah Kata Dummy (Biar bisa ngetes)
+                  const SizedBox(height: 20),
+                  TextButton(
+                     onPressed: () => _addDummyWord(),
+                     child: const Text("Debug: Tambah Kata Dummy", style: TextStyle(color: Colors.white24))
                   )
                 ],
               ),
@@ -193,6 +207,21 @@ class _VocabularyScreenState extends State<VocabularyScreen> {
       );
     }
   }
+  
+  // Fungsi Debug untuk nambah kata kalau database kosong
+  void _addDummyWord() {
+     _vocabService.addWord(uid, WordModel(
+        id: "", 
+        word: "Ephemeral", 
+        meaning: "Sementara / Singkat", 
+        pronunciation: "/əˈfem.ər.əl/", 
+        category: "Adjective", 
+        exampleSentence: "Fashion trends are ephemeral.", 
+        // --- PERBAIKAN UTAMA DI SINI (Menambahkan parameter mnemonic) ---
+        mnemonic: "Ingat 'FM' (Radio). Lagu di radio itu EPHEMERAL (sebentar/lewat saja).",
+        nextReview: DateTime.now().subtract(const Duration(days: 1)) // Buat 'kemarin' biar langsung muncul
+     ));
+  }
 
   // --- DESAIN KARTU DEPAN (INGGRIS) ---
   Widget _buildFrontCard(WordModel word) {
@@ -204,7 +233,7 @@ class _VocabularyScreenState extends State<VocabularyScreen> {
         color: const Color(0xFF1E1E2C),
         borderRadius: BorderRadius.circular(25),
         border: Border.all(color: Colors.cyanAccent, width: 2),
-        boxShadow: [BoxShadow(color: Colors.cyanAccent.withValues(alpha: 0.3), blurRadius: 20)],
+        boxShadow: [BoxShadow(color: Colors.cyanAccent.withOpacity(0.3), blurRadius: 20)],
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -240,28 +269,60 @@ class _VocabularyScreenState extends State<VocabularyScreen> {
         color: const Color(0xFF2A0045), // Warna beda biar kerasa dibalik
         borderRadius: BorderRadius.circular(25),
         border: Border.all(color: const Color(0xFFBD00FF), width: 2),
-        boxShadow: [BoxShadow(color: const Color(0xFFBD00FF).withValues(alpha: 0.3), blurRadius: 20)],
+        boxShadow: [BoxShadow(color: const Color(0xFFBD00FF).withOpacity(0.3), blurRadius: 20)],
       ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Text("Artinya:", style: TextStyle(color: Colors.white54)),
-          const SizedBox(height: 15),
-          Text(
-            word.meaning,
-            style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold),
-            textAlign: TextAlign.center,
-          ),
-          const Divider(color: Colors.white24, height: 40, indent: 40, endIndent: 40),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Text(
+      child: Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text("Artinya:", style: TextStyle(color: Colors.white54)),
+            const SizedBox(height: 10),
+            Text(
+              word.meaning,
+              style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.bold),
+              textAlign: TextAlign.center,
+            ),
+            const Divider(color: Colors.white24, height: 30),
+            
+            // Contoh Kalimat
+            Text(
               "\"${word.exampleSentence}\"",
               style: const TextStyle(color: Colors.white70, fontStyle: FontStyle.italic),
               textAlign: TextAlign.center,
             ),
-          ),
-        ],
+            
+            const SizedBox(height: 20),
+            
+            // --- JEMBATAN KELEDAI (TIPS) ---
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.black26,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.amber.withOpacity(0.3))
+              ),
+              child: Column(
+                children: [
+                  const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.lightbulb, color: Colors.amber, size: 16),
+                      SizedBox(width: 5),
+                      Text("Tips Ingat:", style: TextStyle(color: Colors.amber, fontSize: 12)),
+                    ],
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    word.mnemonic,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+                ],
+              ),
+            )
+          ],
+        ),
       ),
     );
   }

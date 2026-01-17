@@ -14,14 +14,8 @@ class MainScreen extends StatefulWidget {
 }
 
 class _MainScreenState extends State<MainScreen> {
-  // Indeks tab yang aktif
-  int _selectedIndex = 1; 
-
-  // Mengambil UID user saat ini
+  int _selectedIndex = 1;
   final String uid = FirebaseAuth.instance.currentUser!.uid;
-
-  // HAPUS variabel List<Widget> _pages dari sini. 
-  // Kita tidak bisa membuatnya di sini karena butuh data 'user'.
 
   void _onItemTapped(int index) {
     setState(() {
@@ -29,41 +23,104 @@ class _MainScreenState extends State<MainScreen> {
     });
   }
 
+  // --- FUNGSI PENYELAMAT (SELF-HEALING) ---
+  // Jika profil macet/tidak ada, fungsi ini akan membuatnya manual
+  Future<void> _forceCreateProfile() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        UserModel newUser = UserModel(
+          uid: uid,
+          username: user.email!.split('@')[0], // Pakai nama dari email
+          email: user.email!,
+          lastLogin: DateTime.now(),
+        );
+        
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(uid)
+            .set(newUser.toMap());
+            
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Profil berhasil diperbaiki!"), backgroundColor: Colors.green),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Gagal: $e"), backgroundColor: Colors.red),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // StreamBuilder mendengarkan perubahan data user secara real-time
       body: StreamBuilder<DocumentSnapshot>(
         stream: FirebaseFirestore.instance.collection('users').doc(uid).snapshots(),
         builder: (context, snapshot) {
-          // 1. Cek Loading
+          // 1. LOADING STATE
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return _buildLoadingState("Menghubungkan ke server...");
           }
 
-          // 2. Cek Error/Data Kosong
-          if (snapshot.hasError || !snapshot.hasData || !snapshot.data!.exists) {
-            return const Center(child: Text("Gagal memuat profil."));
+          // 2. ERROR STATE
+          if (snapshot.hasError) {
+            return Center(child: Text("Error: ${snapshot.error}", style: const TextStyle(color: Colors.red)));
           }
 
-          // 3. Ambil Data User
-          UserModel user = UserModel.fromMap(
-            snapshot.data!.data() as Map<String, dynamic>, 
-            uid
-          );
+          // 3. DATA KOSONG (PENYEBAB FREEZE) -> TAMPILKAN TOMBOL PERBAIKI
+          if (!snapshot.hasData || !snapshot.data!.exists) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.warning_amber_rounded, size: 60, color: Colors.orange),
+                  const SizedBox(height: 16),
+                  const Text(
+                    "Profil belum siap.",
+                    style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    "Data database terlambat masuk.",
+                    style: TextStyle(color: Colors.white70),
+                  ),
+                  const SizedBox(height: 24),
+                  ElevatedButton.icon(
+                    onPressed: _forceCreateProfile, // Panggil fungsi penyelamat
+                    icon: const Icon(Icons.build),
+                    label: const Text("BUAT PROFIL SEKARANG"),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.cyanAccent,
+                      foregroundColor: Colors.black,
+                    ),
+                  )
+                ],
+              ),
+            );
+          }
 
-          // PERBAIKAN DI SINI:
-          // Kita mendefinisikan daftar halaman DI DALAM builder,
-          // sehingga kita bisa mengirim variabel 'user' ke StoryScreen.
+          // 4. DATA AMAN -> TAMPILKAN UI UTAMA
+          UserModel user;
+          try {
+            user = UserModel.fromMap(
+              snapshot.data!.data() as Map<String, dynamic>, 
+              uid
+            );
+          } catch (e) {
+            return Center(child: Text("Data Corrupt: $e", style: const TextStyle(color: Colors.red)));
+          }
+
+          // List Halaman
           List<Widget> pages = [
-            const AvatarScreen(),    // Halaman 0
-            StoryScreen(user: user), // Halaman 1 (Sekarang error hilang karena user dikirim)
-            const MatchScreen(),     // Halaman 2
+            const AvatarScreen(),    
+            StoryScreen(user: user), 
+            const MatchScreen(),     
           ];
 
           return Stack(
             children: [
-              // BACKGROUND
+              // Background
               Container(
                 decoration: const BoxDecoration(
                   gradient: LinearGradient(
@@ -73,18 +130,12 @@ class _MainScreenState extends State<MainScreen> {
                   ),
                 ),
               ),
-
-              // KONTEN UTAMA
+              // Konten
               SafeArea(
                 child: Column(
                   children: [
-                    // Header Profil
                     _buildProfileHeader(user),
-
-                    // Menampilkan Halaman sesuai tab yang dipilih
-                    Expanded(
-                      child: pages[_selectedIndex], 
-                    ),
+                    Expanded(child: pages[_selectedIndex]),
                   ],
                 ),
               ),
@@ -92,8 +143,7 @@ class _MainScreenState extends State<MainScreen> {
           );
         },
       ),
-
-      // NAVIGASI BAWAH
+      // Navigasi Bawah
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           color: const Color(0xFF0F0025).withValues(alpha: 0.9),
@@ -117,8 +167,26 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-  // WIDGET HEADER PROFIL (Tetap Sama)
+  // Widget Loading Cantik
+  Widget _buildLoadingState(String message) {
+    return Container(
+      color: const Color(0xFF0F0025),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const CircularProgressIndicator(color: Colors.cyanAccent),
+            const SizedBox(height: 16),
+            Text(message, style: const TextStyle(color: Colors.white70)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Widget Header (Copy dari sebelumnya)
   Widget _buildProfileHeader(UserModel user) {
+    double progress = user.maxXp > 0 ? (user.currentXp / user.maxXp).clamp(0.0, 1.0) : 0.0;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
@@ -156,7 +224,7 @@ class _MainScreenState extends State<MainScreen> {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(4),
                   child: LinearProgressIndicator(
-                    value: (user.currentXp / user.maxXp).clamp(0.0, 1.0),
+                    value: progress,
                     backgroundColor: Colors.grey[800],
                     color: const Color(0xFFBD00FF),
                     minHeight: 6,
