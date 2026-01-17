@@ -15,12 +15,16 @@ class _AuthScreenState extends State<AuthScreen> {
   // Kontroller untuk input teks
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  // [BARU] Controller untuk konfirmasi password
+  final TextEditingController _confirmPasswordController = TextEditingController();
   final TextEditingController _usernameController = TextEditingController();
 
   // State untuk logika UI
   bool _isLogin = true; // True = Mode Login, False = Mode Daftar
   bool _isLoading = false; // Untuk menampilkan loading spinner
-  bool _isObscure = true; // Untuk menyembunyikan password
+  bool _isObscure = true; // Untuk menyembunyikan password utama
+  // [BARU] State untuk menyembunyikan password konfirmasi
+  bool _isConfirmObscure = true; 
 
   // Fungsi Utama Login/Daftar
   Future<void> _submit() async {
@@ -104,7 +108,7 @@ class _AuthScreenState extends State<AuthScreen> {
                   Text(
                     "JAGOAN INGGRIS",
                     style: TextStyle(
-                      fontFamily: 'Orbitron', // Pastikan font ini ada atau ganti default
+                      fontFamily: 'Orbitron',
                       fontSize: 28,
                       fontWeight: FontWeight.bold,
                       color: primaryColor,
@@ -162,6 +166,26 @@ class _AuthScreenState extends State<AuthScreen> {
                           },
                           validator: (val) => val!.length < 6 ? "Minimal 6 karakter" : null,
                         ),
+
+                        // [BARU] Input Konfirmasi Password (Hanya muncul saat Daftar)
+                        if (!_isLogin) ...[
+                          const SizedBox(height: 15),
+                          _buildTextField(
+                            controller: _confirmPasswordController,
+                            icon: Icons.lock_reset, // Ikon berbeda untuk pembeda visual
+                            label: "Konfirmasi Password",
+                            isPassword: true,
+                            isObscure: _isConfirmObscure,
+                            onVisibilityToggle: () {
+                              setState(() => _isConfirmObscure = !_isConfirmObscure);
+                            },
+                            validator: (val) {
+                              if (val!.isEmpty) return "Konfirmasi password wajib diisi";
+                              if (val != _passwordController.text) return "Password tidak sama";
+                              return null;
+                            },
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -188,7 +212,7 @@ class _AuthScreenState extends State<AuthScreen> {
                               style: const TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
-                                color: Colors.black, // Kontras dengan tombol Cyan
+                                color: Colors.black,
                               ),
                             ),
                           ),
@@ -202,6 +226,10 @@ class _AuthScreenState extends State<AuthScreen> {
                       setState(() {
                         _isLogin = !_isLogin; // Switch mode
                         _formKey.currentState?.reset(); // Reset pesan error
+                        
+                        // Opsional: Bersihkan field password saat ganti mode agar bersih
+                        _passwordController.clear();
+                        _confirmPasswordController.clear();
                       });
                     },
                     child: RichText(
