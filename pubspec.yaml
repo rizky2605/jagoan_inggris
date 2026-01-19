@@ -5,7 +5,7 @@ publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.24.0 # Disarankan versi lebih baru untuk tahun 2026
+  sdk: ^3.10.7
 
 dependencies:
   flutter:
@@ -16,7 +16,7 @@ dependencies:
   firebase_auth: ^6.1.3
   cloud_firestore: ^6.1.1
   model_viewer_plus: ^1.7.0 
-  google_fonts: ^6.1.0
+  google_fonts: ^7.0.2
 
 dev_dependencies:
   flutter_test:
@@ -29,7 +29,6 @@ flutter:
   assets:
     - assets/models/avatar_default.glb
     - assets/models/teacher.glb
-    # Perbaikan jalur jika folder Anda adalah assets/images/
     - assets/images/icon_body.png
     - assets/images/icon_wings.png
     - assets/images/icon_weapon.png

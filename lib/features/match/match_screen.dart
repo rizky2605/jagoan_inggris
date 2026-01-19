@@ -9,7 +9,7 @@ import 'package:model_viewer_plus/model_viewer_plus.dart';
 
 import '../../models/match_model.dart';
 import '../../models/user_model.dart';
-import '../../core/services/firestore_service.dart';
+import '../../core/services/firestore_service.dart'; // Pastikan path ini sesuai
 import 'match_service.dart';
 
 class MatchScreen extends StatefulWidget {
@@ -24,7 +24,7 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
   late AnimationController _shakeController;
 
   final MatchService _matchService = MatchService();
-  final FirestoreService _firestoreService = FirestoreService();
+  final FirestoreService _firestoreService = FirestoreService(); // Instance Service
   final String uid = FirebaseAuth.instance.currentUser!.uid;
 
   // --- STATE PERTANDINGAN ---
@@ -94,15 +94,21 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
 
     _radarController.repeat();
 
-    var userStream = _firestoreService.getUserStream(uid);
-    UserModel user = await userStream.first;
-    
-    String result = await _matchService.findMatch(user);
+    try {
+      // Menggunakan FirestoreService untuk ambil data user
+      var userStream = _firestoreService.getUserStream(uid);
+      UserModel user = await userStream.first;
+      
+      String result = await _matchService.findMatch(user);
 
-    if (result == "WAITING") {
-      _listenForQueueMatch(uid);
-    } else if (result.isNotEmpty) {
-      _handleMatchFound(result, user.uid);
+      if (result == "WAITING") {
+        _listenForQueueMatch(uid);
+      } else if (result.isNotEmpty) {
+        _handleMatchFound(result, user.uid);
+      }
+    } catch (e) {
+      debugPrint("Error Matchmaking: $e");
+      setState(() => _isSearching = false);
     }
   }
 
@@ -111,6 +117,7 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
         .collection('matches')
         .where('player1Uid', isEqualTo: myUid)
         .where('status', isEqualTo: 'playing')
+        .limit(1) // Optimasi query limit
         .snapshots()
         .listen((snapshot) {
       if (snapshot.docs.isNotEmpty && mounted && _isSearching && _activeMatchId == null) {
@@ -203,9 +210,15 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
                   Expanded(
                     child: Row(
                       children: [
+                        // PLAYER KITA (KIRI)
                         Expanded(flex: 2, child: _build3DModel(true, autoRotate: false)),
+                        
+                        // TENGAH (SOAL)
                         Expanded(flex: 5, child: _buildQuestionArena(match, isP1)),
-                        Expanded(flex: 2, child: Transform(alignment: Alignment.center, transform: Matrix4.rotationY(pi), child: _build3DModel(false, autoRotate: false))),
+                        
+                        // PLAYER LAWAN (KANAN)
+                        // [PERBAIKAN] Transform dihapus agar tidak error layar hitam
+                        Expanded(flex: 2, child: _build3DModel(false, autoRotate: false)),
                       ],
                     ),
                   ),
@@ -223,8 +236,11 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
     _gameTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted) return;
       setState(() {
-        if (_timeLeft > 0) _timeLeft--;
-        else timer.cancel();
+        if (_timeLeft > 0) {
+          _timeLeft--;
+        } else {
+          timer.cancel();
+        }
       });
     });
   }
@@ -262,8 +278,8 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF1A0038),
-        title: const Text("MENYERAH?"),
-        content: const Text("Kamu akan kehilangan MMR dan lawan otomatis menang."),
+        title: const Text("MENYERAH?", style: TextStyle(color: Colors.white)),
+        content: const Text("Kamu akan kehilangan MMR dan lawan otomatis menang.", style: TextStyle(color: Colors.white70)),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("BATAL")),
           TextButton(onPressed: () => Navigator.pop(context, true), child: const Text("YA", style: TextStyle(color: Colors.redAccent))),
@@ -379,21 +395,41 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
   // UI LOBBY
   // ===========================================================================
 
+  // ===========================================================================
+  // UI LOBBY (PERBAIKAN ERROR STREAM)
+  // ===========================================================================
+
   @override
   Widget build(BuildContext context) {
+    // Jika sedang dalam match, tampilkan UI Arena
     if (_activeMatchId != null) return _buildActiveMatchUI();
 
     return Scaffold(
       backgroundColor: const Color(0xFF050010),
-      body: StreamBuilder<DocumentSnapshot>(
-        stream: FirebaseFirestore.instance.collection('users').doc(uid).snapshots(),
+      // [FIX] Gunakan Stream<UserModel> langsung dari Service
+      body: StreamBuilder<UserModel>(
+        stream: _firestoreService.getUserStream(uid),
         builder: (context, snapshot) {
-          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-          UserModel myUser = UserModel.fromMap(snapshot.data!.data() as Map<String, dynamic>, uid);
+          // 1. Loading State
+          if (snapshot.connectionState == ConnectionState.waiting) {
+             return const Center(child: CircularProgressIndicator());
+          }
+
+          // 2. Error / Data Kosong State
+          if (!snapshot.hasData) {
+            return const Center(child: Text("Gagal memuat data user", style: TextStyle(color: Colors.white)));
+          }
+
+          // 3. Data Ready (Sudah otomatis jadi UserModel berkat Service)
+          UserModel myUser = snapshot.data!;
 
           return Container(
             decoration: const BoxDecoration(
-              gradient: LinearGradient(colors: [Color(0xFF050010), Color(0xFF1A0038)], begin: Alignment.topLeft, end: Alignment.bottomRight)
+              gradient: LinearGradient(
+                colors: [Color(0xFF050010), Color(0xFF1A0038)], 
+                begin: Alignment.topLeft, 
+                end: Alignment.bottomRight
+              )
             ),
             child: AnimatedBuilder(
               animation: _shakeController,
@@ -410,7 +446,14 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
                       children: [
                         Expanded(flex: 3, child: _buildAvatarSlot("KAMU", true)),
                         Expanded(flex: 2, child: _buildMatchCenter()),
-                        Expanded(flex: 3, child: _buildAvatarSlot(_foundOpponentData?['name'] ?? "MENCARI...", false, isFound: _foundOpponentData != null)),
+                        Expanded(
+                          flex: 3, 
+                          child: _buildAvatarSlot(
+                            _foundOpponentData?['name'] ?? "MENCARI...", 
+                            false, 
+                            isFound: _foundOpponentData != null
+                          )
+                        ),
                       ],
                     ),
                     const Spacer(),
@@ -424,7 +467,6 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
       ),
     );
   }
-
   Widget _buildHUDHeader(UserModel user) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 20),

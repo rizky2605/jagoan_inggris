@@ -1,55 +1,54 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class UserModel {
-  // --- IDENTITAS ---
+  // --- 1. IDENTITAS ---
   final String uid;
   final String username;
   final String email;
   final String photoUrl;
-  final String bio; // [BARU] Untuk status/moto di profil
+  final String bio;
 
-  // --- PROGRESI PLAYER ---
+  // --- 2. PROGRESI PLAYER ---
   final int level;
-  final int currentXp; // XP saat ini di level berjalan
-  final int maxXp;     // Target XP untuk naik level
-  final int totalXp;   // [BARU] Akumulasi XP seumur hidup (untuk Leaderboard)
+  final int currentXp; 
+  final int maxXp;     
+  final int totalXp;   
   final int streakCount;
   final DateTime? lastLogin;
 
-  // --- STATISTIK HARIAN ---
-  final int dailyWordCount;   // Kata yg sudah dipelajari hari ini
-  final int dailyWordTarget;  // Target kata per hari
-  final int dailyQuizScore;   // Skor kuis hari ini (0-100)
+  // --- 3. STATISTIK HARIAN ---
+  final int dailyWordCount;   
+  final int dailyWordTarget;  
+  final int dailyQuizScore;   
 
-  // --- EKONOMI & KUSTOMISASI ---
+  // --- 4. EKONOMI & KUSTOMISASI ---
   final int gold;
   final Map<String, dynamic> equippedLoadout; 
   final List<String> ownedItems; 
 
-  // --- KOMPETITIF (MATCH) ---
+  // --- 5. KOMPETITIF (MATCH & RANK) ---
   final int mmr;
   final String rankName;
   final int winCount;
   final int lossCount;
 
-  // --- STORY PROGRESS & SRS ---
+  // --- 6. STORY PROGRESS & SRS ---
   final int lastCompletedLevel;
   final List<String> unlockedMilestones;
-  final Map<String, dynamic> levelsProgress; // Data Review SRS
+  final Map<String, dynamic> levelsProgress; 
 
   UserModel({
     required this.uid,
     required this.username,
     required this.email,
     this.photoUrl = '',
-    this.bio = 'Jagoan Inggris siap bertarung!', // Default Bio
+    this.bio = 'Jagoan Inggris siap bertarung!',
     this.level = 1,
     this.currentXp = 0,
     this.maxXp = 1000,
-    this.totalXp = 0, // Default Total XP 0
+    this.totalXp = 0,
     this.streakCount = 0,
     this.lastLogin,
-    // Default Daily Stats
     this.dailyWordCount = 0, 
     this.dailyWordTarget = 10,
     this.dailyQuizScore = 0,
@@ -66,44 +65,96 @@ class UserModel {
     this.lossCount = 0,
     this.lastCompletedLevel = 0,
     this.unlockedMilestones = const [],
-    this.levelsProgress = const {}, // Default kosong untuk SRS
+    this.levelsProgress = const {},
   });
 
-  // --- CONVERT: FIRESTORE -> MODEL (DENGAN SAFE CASTING) ---
+  // --- [PENTING] COPY WITH ---
+  // Memudahkan update data sebagian tanpa menghapus data lain
+  UserModel copyWith({
+    String? username,
+    String? photoUrl,
+    String? bio,
+    int? level,
+    int? currentXp,
+    int? maxXp,
+    int? totalXp,
+    int? streakCount,
+    DateTime? lastLogin,
+    int? dailyWordCount,
+    int? dailyWordTarget,
+    int? dailyQuizScore,
+    int? gold,
+    Map<String, dynamic>? equippedLoadout,
+    List<String>? ownedItems,
+    int? mmr,
+    String? rankName,
+    int? winCount,
+    int? lossCount,
+    int? lastCompletedLevel,
+    List<String>? unlockedMilestones,
+    Map<String, dynamic>? levelsProgress,
+  }) {
+    return UserModel(
+      uid: uid, // UID tidak boleh berubah
+      email: email, // Email biasanya tidak berubah lewat copyWith
+      username: username ?? this.username,
+      photoUrl: photoUrl ?? this.photoUrl,
+      bio: bio ?? this.bio,
+      level: level ?? this.level,
+      currentXp: currentXp ?? this.currentXp,
+      maxXp: maxXp ?? this.maxXp,
+      totalXp: totalXp ?? this.totalXp,
+      streakCount: streakCount ?? this.streakCount,
+      lastLogin: lastLogin ?? this.lastLogin,
+      dailyWordCount: dailyWordCount ?? this.dailyWordCount,
+      dailyWordTarget: dailyWordTarget ?? this.dailyWordTarget,
+      dailyQuizScore: dailyQuizScore ?? this.dailyQuizScore,
+      gold: gold ?? this.gold,
+      equippedLoadout: equippedLoadout ?? this.equippedLoadout,
+      ownedItems: ownedItems ?? this.ownedItems,
+      mmr: mmr ?? this.mmr,
+      rankName: rankName ?? this.rankName,
+      winCount: winCount ?? this.winCount,
+      lossCount: lossCount ?? this.lossCount,
+      lastCompletedLevel: lastCompletedLevel ?? this.lastCompletedLevel,
+      unlockedMilestones: unlockedMilestones ?? this.unlockedMilestones,
+      levelsProgress: levelsProgress ?? this.levelsProgress,
+    );
+  }
+
+  // --- CONVERT: FIRESTORE -> MODEL ---
   factory UserModel.fromMap(Map<String, dynamic> data, String id) {
+    // Helper function agar aman jika data null atau double
+    int toInt(dynamic val, int def) => (val is num) ? val.toInt() : def;
+
     return UserModel(
       uid: id,
       username: data['username'] ?? 'Jagoan Baru',
       email: data['email'] ?? '',
       photoUrl: data['photoUrl'] ?? '',
-      bio: data['bio'] ?? 'Jagoan Inggris siap bertarung!', // Load Bio
+      bio: data['bio'] ?? 'Jagoan Inggris siap bertarung!',
       
-      // Safe Casting .toInt()
-      level: (data['level'] ?? 1).toInt(),
-      currentXp: (data['current_xp'] ?? 0).toInt(),
-      maxXp: (data['max_xp'] ?? 1000).toInt(),
-      totalXp: (data['total_xp'] ?? 0).toInt(), // Load Total XP
-      streakCount: (data['streak_count'] ?? 0).toInt(),
+      level: toInt(data['level'], 1),
+      currentXp: toInt(data['current_xp'], 0),
+      maxXp: toInt(data['max_xp'], 1000),
+      totalXp: toInt(data['total_xp'], 0),
+      streakCount: toInt(data['streak_count'], 0),
       lastLogin: (data['last_login'] as Timestamp?)?.toDate(),
       
-      // Data Harian
-      dailyWordCount: (data['daily_word_count'] ?? 0).toInt(),
-      dailyWordTarget: (data['daily_word_target'] ?? 10).toInt(),
-      dailyQuizScore: (data['daily_quiz_score'] ?? 0).toInt(),
+      dailyWordCount: toInt(data['daily_word_count'], 0),
+      dailyWordTarget: toInt(data['daily_word_target'], 10),
+      dailyQuizScore: toInt(data['daily_quiz_score'], 0),
 
-      // Ekonomi
-      gold: (data['gold'] ?? 0).toInt(),
+      gold: toInt(data['gold'], 0),
       equippedLoadout: Map<String, dynamic>.from(data['equipped_loadout'] ?? {}),
       ownedItems: List<String>.from(data['owned_items'] ?? ['default_avatar', 'default_bow', 'none']),
       
-      // Kompetitif
-      mmr: (data['mmr'] ?? 1000).toInt(),
+      mmr: toInt(data['mmr'], 1000), // Default 1000 jika null
       rankName: data['rank_name'] ?? 'Bronze I',
-      winCount: (data['win_count'] ?? 0).toInt(),
-      lossCount: (data['loss_count'] ?? 0).toInt(),
+      winCount: toInt(data['win_count'], 0),
+      lossCount: toInt(data['loss_count'], 0),
       
-      // Story & SRS
-      lastCompletedLevel: (data['last_completed_level'] ?? 0).toInt(),
+      lastCompletedLevel: toInt(data['last_completed_level'], 0),
       unlockedMilestones: List<String>.from(data['unlocked_milestones'] ?? []),
       levelsProgress: Map<String, dynamic>.from(data['levels_progress'] ?? {}),
     );
@@ -115,15 +166,14 @@ class UserModel {
       'username': username,
       'email': email,
       'photoUrl': photoUrl,
-      'bio': bio, // Simpan Bio
+      'bio': bio,
       'level': level,
       'current_xp': currentXp,
       'max_xp': maxXp,
-      'total_xp': totalXp, // Simpan Total XP
+      'total_xp': totalXp,
       'streak_count': streakCount,
-      'last_login': lastLogin,
+      'last_login': lastLogin != null ? Timestamp.fromDate(lastLogin!) : null,
       
-      // Data Harian
       'daily_word_count': dailyWordCount,
       'daily_word_target': dailyWordTarget,
       'daily_quiz_score': dailyQuizScore,
@@ -131,12 +181,12 @@ class UserModel {
       'gold': gold,
       'equipped_loadout': equippedLoadout,
       'owned_items': ownedItems,
+      
       'mmr': mmr,
       'rank_name': rankName,
       'win_count': winCount,
       'loss_count': lossCount,
       
-      // Story & SRS
       'last_completed_level': lastCompletedLevel,
       'unlocked_milestones': unlockedMilestones,
       'levels_progress': levelsProgress, 
