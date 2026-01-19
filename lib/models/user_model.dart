@@ -54,11 +54,11 @@ class UserModel {
     this.dailyQuizScore = 0,
     this.gold = 500,
     this.equippedLoadout = const {
-      'body': 'default_avatar',
-      'weapon': 'default_bow',
+      'body': 'avatar_default',
+      'weapon': 'none',
       'wings': 'none',
     },
-    this.ownedItems = const ['default_avatar', 'default_bow', 'none'], 
+    this.ownedItems = const ['avatar_default'], 
     this.mmr = 1000,
     this.rankName = 'Bronze I',
     this.winCount = 0,
@@ -68,8 +68,7 @@ class UserModel {
     this.levelsProgress = const {},
   });
 
-  // --- [PENTING] COPY WITH ---
-  // Memudahkan update data sebagian tanpa menghapus data lain
+  // --- COPY WITH ---
   UserModel copyWith({
     String? username,
     String? photoUrl,
@@ -95,8 +94,8 @@ class UserModel {
     Map<String, dynamic>? levelsProgress,
   }) {
     return UserModel(
-      uid: uid, // UID tidak boleh berubah
-      email: email, // Email biasanya tidak berubah lewat copyWith
+      uid: uid,
+      email: email,
       username: username ?? this.username,
       photoUrl: photoUrl ?? this.photoUrl,
       bio: bio ?? this.bio,
@@ -122,74 +121,86 @@ class UserModel {
     );
   }
 
-  // --- CONVERT: FIRESTORE -> MODEL ---
+  // --- CONVERT: FIRESTORE -> MODEL (FIXED KEYS) ---
   factory UserModel.fromMap(Map<String, dynamic> data, String id) {
-    // Helper function agar aman jika data null atau double
-    int toInt(dynamic val, int def) => (val is num) ? val.toInt() : def;
+    // Helper agar tidak error jika data double/null
+    int toInt(dynamic val, int def) {
+      if (val == null) return def;
+      if (val is int) return val;
+      if (val is double) return val.toInt();
+      return def;
+    }
 
     return UserModel(
       uid: id,
-      username: data['username'] ?? 'Jagoan Baru',
+      username: data['username'] ?? 'User',
       email: data['email'] ?? '',
       photoUrl: data['photoUrl'] ?? '',
       bio: data['bio'] ?? 'Jagoan Inggris siap bertarung!',
       
+      // Menggunakan key camelCase agar sesuai dengan MatchService
       level: toInt(data['level'], 1),
-      currentXp: toInt(data['current_xp'], 0),
-      maxXp: toInt(data['max_xp'], 1000),
-      totalXp: toInt(data['total_xp'], 0),
-      streakCount: toInt(data['streak_count'], 0),
-      lastLogin: (data['last_login'] as Timestamp?)?.toDate(),
+      currentXp: toInt(data['currentXp'] ?? data['current_xp'], 0), // Support kedua format
+      maxXp: toInt(data['maxXp'] ?? data['max_xp'], 1000),
+      totalXp: toInt(data['totalXp'] ?? data['total_xp'], 0),
+      streakCount: toInt(data['streakCount'] ?? data['streak_count'], 0),
+      lastLogin: (data['lastLogin'] as Timestamp?)?.toDate(),
       
-      dailyWordCount: toInt(data['daily_word_count'], 0),
-      dailyWordTarget: toInt(data['daily_word_target'], 10),
-      dailyQuizScore: toInt(data['daily_quiz_score'], 0),
+      dailyWordCount: toInt(data['dailyWordCount'] ?? data['daily_word_count'], 0),
+      dailyWordTarget: toInt(data['dailyWordTarget'] ?? data['daily_word_target'], 10),
+      dailyQuizScore: toInt(data['dailyQuizScore'] ?? data['daily_quiz_score'], 0),
 
-      gold: toInt(data['gold'], 0),
-      equippedLoadout: Map<String, dynamic>.from(data['equipped_loadout'] ?? {}),
-      ownedItems: List<String>.from(data['owned_items'] ?? ['default_avatar', 'default_bow', 'none']),
+      gold: toInt(data['gold'], 500),
+      equippedLoadout: Map<String, dynamic>.from(data['equippedLoadout'] ?? data['equipped_loadout'] ?? {
+        'body': 'avatar_default',
+        'weapon': null,
+        'wings': null
+      }),
+      ownedItems: List<String>.from(data['ownedItems'] ?? data['owned_items'] ?? ['avatar_default']),
       
-      mmr: toInt(data['mmr'], 1000), // Default 1000 jika null
-      rankName: data['rank_name'] ?? 'Bronze I',
-      winCount: toInt(data['win_count'], 0),
-      lossCount: toInt(data['loss_count'], 0),
+      // [FIX UTAMA] Pastikan ini membaca 'winCount' (camelCase)
+      mmr: toInt(data['mmr'], 1000),
+      rankName: data['rankName'] ?? 'Bronze I',
+      winCount: toInt(data['winCount'] ?? data['win_count'], 0), 
+      lossCount: toInt(data['lossCount'] ?? data['loss_count'], 0),
       
-      lastCompletedLevel: toInt(data['last_completed_level'], 0),
-      unlockedMilestones: List<String>.from(data['unlocked_milestones'] ?? []),
-      levelsProgress: Map<String, dynamic>.from(data['levels_progress'] ?? {}),
+      lastCompletedLevel: toInt(data['lastCompletedLevel'] ?? data['last_completed_level'], 0),
+      unlockedMilestones: List<String>.from(data['unlockedMilestones'] ?? []),
+      levelsProgress: Map<String, dynamic>.from(data['levelsProgress'] ?? {}),
     );
   }
 
-  // --- CONVERT: MODEL -> FIRESTORE ---
+  // --- CONVERT: MODEL -> FIRESTORE (STANDARD CAMELCASE) ---
   Map<String, dynamic> toMap() {
     return {
       'username': username,
       'email': email,
       'photoUrl': photoUrl,
       'bio': bio,
-      'level': level,
-      'current_xp': currentXp,
-      'max_xp': maxXp,
-      'total_xp': totalXp,
-      'streak_count': streakCount,
-      'last_login': lastLogin != null ? Timestamp.fromDate(lastLogin!) : null,
       
-      'daily_word_count': dailyWordCount,
-      'daily_word_target': dailyWordTarget,
-      'daily_quiz_score': dailyQuizScore,
+      'level': level,
+      'currentXp': currentXp,
+      'maxXp': maxXp,
+      'totalXp': totalXp,
+      'streakCount': streakCount,
+      'lastLogin': lastLogin != null ? Timestamp.fromDate(lastLogin!) : null,
+      
+      'dailyWordCount': dailyWordCount,
+      'dailyWordTarget': dailyWordTarget,
+      'dailyQuizScore': dailyQuizScore,
 
       'gold': gold,
-      'equipped_loadout': equippedLoadout,
-      'owned_items': ownedItems,
+      'equippedLoadout': equippedLoadout,
+      'ownedItems': ownedItems,
       
       'mmr': mmr,
-      'rank_name': rankName,
-      'win_count': winCount,
-      'loss_count': lossCount,
+      'rankName': rankName,
+      'winCount': winCount,   // Konsisten camelCase
+      'lossCount': lossCount, // Konsisten camelCase
       
-      'last_completed_level': lastCompletedLevel,
-      'unlocked_milestones': unlockedMilestones,
-      'levels_progress': levelsProgress, 
+      'lastCompletedLevel': lastCompletedLevel,
+      'unlockedMilestones': unlockedMilestones,
+      'levelsProgress': levelsProgress, 
     };
   }
 }

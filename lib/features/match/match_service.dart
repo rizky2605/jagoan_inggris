@@ -7,13 +7,15 @@ import '../../models/user_model.dart';
 class MatchService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
+  // ... (KODE FIND MATCH & GAMEPLAY TETAP SAMA SEPERTI SEBELUMNYA) ...
+  // Langsung scroll ke bagian paling bawah untuk update syncUserStats
+
   // ===========================================================================
   // 1. MATCHMAKING SYSTEM (FAIL-SAFE)
   // ===========================================================================
   
   Future<String> findMatch(UserModel user) async {
     try {
-      // 1. Masukkan diri ke antrean
       await _db.collection('match_queue').doc(user.uid).set({
         'uid': user.uid,
         'username': user.username,
@@ -27,7 +29,6 @@ class MatchService {
 
       await Future.delayed(const Duration(milliseconds: 500));
 
-      // 2. Cari Lawan
       QuerySnapshot queueSnapshot = await _db.collection('match_queue')
           .where('status', isEqualTo: 'searching')
           .orderBy('timestamp', descending: false)
@@ -39,38 +40,26 @@ class MatchService {
 
       for (var doc in queueSnapshot.docs) {
         if (doc['uid'] == user.uid) continue;
-
         try {
           if (doc.data() != null && (doc.data() as Map).containsKey('lastSeen')) {
             Timestamp? ts = doc['lastSeen'];
-            if (ts != null && ts.toDate().isBefore(threshold)) {
-              continue; 
-            }
+            if (ts != null && ts.toDate().isBefore(threshold)) continue; 
           }
-        } catch (e) {
-          continue; 
-        }
-
+        } catch (e) { continue; }
         opponentDoc = doc;
         break; 
       }
 
-      // 3. Transaksi
       if (opponentDoc != null) {
         try {
           return await _db.runTransaction((transaction) async {
             DocumentSnapshot freshOpponent = await transaction.get(opponentDoc!.reference);
-            if (!freshOpponent.exists) {
-              throw Exception("Lawan sudah diambil.");
-            }
+            if (!freshOpponent.exists) throw Exception("Lawan diambil.");
 
             String matchId = _db.collection('matches').doc().id; 
             
             String oppAvatar = 'assets/models/avatar_default.glb';
-            try {
-              oppAvatar = freshOpponent['avatarPath'] ?? 'assets/models/avatar_default.glb';
-            } catch (_) {}
-
+            try { oppAvatar = freshOpponent['avatarPath'] ?? 'assets/models/avatar_default.glb'; } catch (_) {}
             String myAvatar = _getAvatarPath(user.equippedLoadout['body']);
 
             MatchModel newMatch = MatchModel(
@@ -85,33 +74,24 @@ class MatchService {
               p2Avatar: myAvatar,
               status: 'playing',      
               currentRound: 1,
-              p1Health: 100,
-              p2Health: 100,
-              p1Score: 0,
-              p2Score: 0,
+              p1Health: 100, p2Health: 100, p1Score: 0, p2Score: 0,
               currentQuestion: _getRandomQuestion(), 
             );
 
             transaction.delete(freshOpponent.reference);
             transaction.delete(_db.collection('match_queue').doc(user.uid));
-            
             transaction.set(_db.collection('matches').doc(matchId), newMatch.toMap());
             
             return matchId;
           });
         } catch (e) {
-          print("Tabrakan Transaksi (Wajar): $e");
           return "WAITING"; 
         }
       } else {
         return "WAITING"; 
       }
-
     } catch (e) {
-      print("Global Match Error: $e");
-      if (e.toString().contains("failed-precondition")) {
-        throw Exception("INDEX_MISSING");
-      }
+      if (e.toString().contains("failed-precondition")) throw Exception("INDEX_MISSING");
       return "WAITING"; 
     }
   }
@@ -127,9 +107,7 @@ class MatchService {
   }
 
   Future<void> updateHeartbeat(String uid) async {
-    try {
-      await _db.collection('match_queue').doc(uid).update({'lastSeen': FieldValue.serverTimestamp()});
-    } catch (e) {}
+    try { await _db.collection('match_queue').doc(uid).update({'lastSeen': FieldValue.serverTimestamp()}); } catch (e) {}
   }
   
   Future<void> submitAnswer(String matchId, String uid, String answer, int timeTaken, bool isPlayer1) async {
@@ -154,10 +132,8 @@ class MatchService {
     int t1 = match.p1Time ?? 99999999;
     int t2 = match.p2Time ?? 99999999;
 
-    const int damageWrong = 20;       
-    const int damageSlow = 5;         
-    const int damageBothWrong = 10;   
-    const int scoreWin = 20;
+    const int damageWrong = 20; const int damageSlow = 5; 
+    const int damageBothWrong = 10; const int scoreWin = 20;
 
     if (p1Correct && !p2Correct) {
       p2NewHealth -= damageWrong; p1NewScore += scoreWin;
@@ -219,32 +195,84 @@ class MatchService {
     });
   }
 
+  Stream<List<MatchModel>> getMatchHistory(String uid) {
+    return _db.collection('matches')
+        .where('status', isEqualTo: 'finished')
+        .limit(50)
+        .snapshots()
+        .map((snapshot) {
+          var allMatches = snapshot.docs.map((d) => MatchModel.fromMap(d.data())).toList();
+          return allMatches.where((m) => m.player1Uid == uid || m.player2Uid == uid).toList();
+        });
+  }
+
   Map<String, dynamic> _getRandomQuestion() {
     final List<Map<String, dynamic>> questionBank = [
       {'question': 'I ___ a student.', 'options': ['Am', 'Is', 'Are', 'Be'], 'correctAnswer': 'Am'},
       {'question': 'She ___ to school.', 'options': ['Go', 'Goes', 'Went', 'Gone'], 'correctAnswer': 'Goes'},
-      {'question': 'They ___ football now.', 'options': ['Play', 'Played', 'Are playing', 'Is playing'], 'correctAnswer': 'Are playing'},
-      {'question': 'Opposite of "Happy"', 'options': ['Sad', 'Angry', 'Glad', 'Joy'], 'correctAnswer': 'Sad'},
-      {'question': 'We ___ busy yesterday.', 'options': ['Was', 'Were', 'Are', 'Is'], 'correctAnswer': 'Were'},
+      {'question': 'They ___ football.', 'options': ['Play', 'Played', 'Playing', 'Plays'], 'correctAnswer': 'Play'},
+      {'question': 'Antonym of "Big"', 'options': ['Huge', 'Large', 'Small', 'Giant'], 'correctAnswer': 'Small'},
+      {'question': 'Synonym of "Fast"', 'options': ['Slow', 'Quick', 'Late', 'Lazy'], 'correctAnswer': 'Quick'},
     ];
     return questionBank[Random().nextInt(questionBank.length)];
   }
 
-  // --- HISTORY MATCH (FIXED WARNING) ---
-  Stream<List<MatchModel>> getMatchHistory(String uid) {
-    // Kita hapus stream1 dan stream2 karena tidak dipakai.
-    // Kita langsung gunakan query umum + filter client-side agar simple.
-    
-    return _db.collection('matches')
-        .where('status', isEqualTo: 'finished')
-        .limit(50) // Ambil 50 match terakhir secara global
-        .snapshots()
-        .map((snapshot) {
-          // Ubah ke Model
-          var allMatches = snapshot.docs.map((d) => MatchModel.fromMap(d.data())).toList();
-          
-          // Filter: Hanya ambil match yang mengandung UID kita
-          return allMatches.where((m) => m.player1Uid == uid || m.player2Uid == uid).toList();
-        });
+  // ===========================================================================
+  // [FIX] SYNC USER STATS (DENGAN LOGGING)
+  // ===========================================================================
+  
+  Future<void> syncUserStats(String uid) async {
+    try {
+      print("SYNC: Memulai sinkronisasi stats untuk $uid");
+      
+      int wins = 0;
+      int losses = 0;
+
+      // Ambil match sebagai P1
+      var q1 = await _db.collection('matches')
+          .where('player1Uid', isEqualTo: uid)
+          .where('status', isEqualTo: 'finished')
+          .get();
+
+      // Ambil match sebagai P2
+      var q2 = await _db.collection('matches')
+          .where('player2Uid', isEqualTo: uid)
+          .where('status', isEqualTo: 'finished')
+          .get();
+
+      List<DocumentSnapshot> allDocs = [...q1.docs, ...q2.docs];
+      print("SYNC: Ditemukan ${allDocs.length} riwayat pertandingan.");
+
+      for (var doc in allDocs) {
+        var data = doc.data() as Map<String, dynamic>;
+        
+        int hp1 = data['p1Health'] ?? 0;
+        int hp2 = data['p2Health'] ?? 0;
+        int s1 = data['p1Score'] ?? 0;
+        int s2 = data['p2Score'] ?? 0;
+
+        bool isP1 = (data['player1Uid'] == uid);
+        bool userWon = false;
+
+        // Logika Pemenang
+        if (hp1 > hp2) userWon = isP1;
+        else if (hp2 > hp1) userWon = !isP1;
+        else if (s1 > s2) userWon = isP1;
+        else userWon = !isP1; 
+
+        if (userWon) wins++; else losses++;
+      }
+
+      print("SYNC RESULT: Wins=$wins, Losses=$losses");
+
+      // Update Paksa ke Database User
+      await _db.collection('users').doc(uid).update({
+        'winCount': wins,
+        'lossCount': losses,
+      });
+      
+    } catch (e) {
+      print("SYNC ERROR: $e");
+    }
   }
 }

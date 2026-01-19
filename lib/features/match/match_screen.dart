@@ -6,12 +6,13 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:model_viewer_plus/model_viewer_plus.dart';
+
 import '../../models/match_model.dart';
 import '../../models/user_model.dart';
 import '../../core/services/firestore_service.dart';
 import 'match_service.dart';
-import 'leaderboard_screen.dart';
-import 'history_screen.dart';
+import 'leaderboard_screen.dart'; 
+import 'history_screen.dart';     
 
 class MatchScreen extends StatefulWidget {
   const MatchScreen({super.key});
@@ -43,7 +44,7 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
   Timer? _heartbeatTimer;
   bool _hasAnswered = false;
   
-  // Feedback Visual State
+  // Feedback Visual
   bool _showFeedback = false;
   String _feedbackText = "";
   Color _feedbackColor = Colors.white;
@@ -57,9 +58,14 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
     super.initState();
     _radarController = AnimationController(vsync: this, duration: const Duration(seconds: 2));
     _shakeController = AnimationController(vsync: this, duration: const Duration(milliseconds: 500));
-    // Animasi feedback sangat cepat (200ms) agar terasa responsif
-    _feedbackController = AnimationController(vsync: this, duration: const Duration(milliseconds: 200));
+    _feedbackController = AnimationController(vsync: this, duration: const Duration(milliseconds: 300));
     _feedbackScale = CurvedAnimation(parent: _feedbackController, curve: Curves.elasticOut);
+
+    // [FIX] SINKRONISASI STATS SAAT MASUK LOBBY
+    // Jalankan di background agar UI tidak macet
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _matchService.syncUserStats(uid);
+    });
   }
 
   @override
@@ -89,6 +95,8 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
         _isHostProcessing = false;
         _timeLeft = 10;
       });
+      // [FIX] Sinkronisasi ulang stats setelah match selesai
+      _matchService.syncUserStats(uid);
     }
     _gameTimer?.cancel();
     _heartbeatTimer?.cancel();
@@ -157,9 +165,15 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
 
     if (mounted) {
       setState(() {
-        _foundOpponentData = {'name': isP1 ? matchData.player2Name : matchData.player1Name};
+        _foundOpponentData = {
+          'name': isP1 ? matchData.player2Name : matchData.player1Name,
+          'photoUrl': isP1 ? matchData.p2PhotoUrl : matchData.p1PhotoUrl,
+          'avatarPath': isP1 ? matchData.p2Avatar : matchData.p1Avatar,
+        };
       });
+      
       _shakeController.forward(from: 0);
+
       for (int i = 3; i >= 1; i--) {
         if (!mounted || !_isSearching) return; 
         setState(() => _startCount = i);
@@ -173,14 +187,13 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
   }
 
   // ===========================================================================
-  // UI ARENA & FEEDBACK (DIPERCEPAT)
+  // GAMEPLAY LOGIC & FEEDBACK
   // ===========================================================================
 
   void _calculateLocalFeedback(MatchModel match, bool amIP1) {
     if (match.currentQuestion == null) return;
     
     String correctAnswer = match.currentQuestion!['correctAnswer'];
-    
     String? myAns = amIP1 ? match.p1Answer : match.p2Answer;
     String? oppAns = amIP1 ? match.p2Answer : match.p1Answer;
     
@@ -221,12 +234,306 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
     HapticFeedback.mediumImpact();
   }
 
+  // ===========================================================================
+  // BUILD METHOD (MAIN SWITCHER)
+  // ===========================================================================
+
+  @override
+  Widget build(BuildContext context) {
+    if (_activeMatchId != null) return _buildActiveMatchUI();
+
+    return Scaffold(
+      body: Container(
+        decoration: const BoxDecoration(
+          image: DecorationImage(
+            image: AssetImage('assets/images/bg_stars.jpg'), 
+            fit: BoxFit.cover,
+          ),
+        ),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [const Color(0xFF050010).withOpacity(0.8), const Color(0xFF1A0038).withOpacity(0.9)],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter
+            )
+          ),
+          child: StreamBuilder<UserModel>(
+            stream: _firestoreService.getUserStream(uid),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+              UserModel myUser = snapshot.data!;
+
+              String myAvatarPath = 'assets/models/avatar_default.glb';
+              if (myUser.equippedLoadout['body'] == 'monster') myAvatarPath = 'assets/models/monster.glb';
+              if (myUser.equippedLoadout['body'] == 'teacher') myAvatarPath = 'assets/models/teacher.glb';
+
+              return AnimatedBuilder(
+                animation: _shakeController,
+                builder: (context, child) {
+                  final double offset = sin(_shakeController.value * pi * 10.0) * 5.0;
+                  return Transform.translate(offset: Offset(offset, 0), child: child);
+                },
+                child: SafeArea(
+                  child: Column(
+                    children: [
+                      _buildLobbyHeader(myUser),
+                      const Spacer(),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          Expanded(
+                            child: _buildLobbyAvatarCard(
+                              "KAMU", 
+                              myUser.username, 
+                              myAvatarPath, 
+                              myUser.photoUrl,
+                              isPlayer: true
+                            )
+                          ),
+                          _buildLobbyCenterStatus(),
+                          Expanded(
+                            child: _buildLobbyAvatarCard(
+                              "LAWAN", 
+                              _foundOpponentData?['name'] ?? "???", 
+                              _foundOpponentData?['avatarPath'] ?? 'assets/models/avatar_default.glb', 
+                              _foundOpponentData?['photoUrl'] ?? '', 
+                              isPlayer: false,
+                              isFound: _foundOpponentData != null
+                            )
+                          ),
+                        ],
+                      ),
+                      const Spacer(),
+                      _buildBottomNavBar(context),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // WIDGETS LOBBY
+  // ===========================================================================
+
+  Widget _buildLobbyHeader(UserModel user) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.emoji_events, color: Colors.amber),
+              const SizedBox(width: 8),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text("RANK MMR", style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 10)),
+                  Text("${user.mmr}", style: GoogleFonts.orbitron(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                ],
+              ),
+            ],
+          ),
+          Container(height: 30, width: 1, color: Colors.white10),
+          Row(
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text("BATTLE STATS", style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 10)),
+                  Text("${user.winCount}W - ${user.lossCount}L", style: GoogleFonts.orbitron(color: Colors.cyanAccent, fontSize: 14)),
+                ],
+              ),
+              const SizedBox(width: 8),
+              const Icon(Icons.bar_chart, color: Colors.cyanAccent),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLobbyAvatarCard(String label, String name, String avatar3d, String photoUrl, {bool isPlayer = false, bool isFound = true}) {
+    return Column(
+      children: [
+        Text(label, style: GoogleFonts.orbitron(color: isPlayer ? Colors.cyanAccent : (isFound ? Colors.redAccent : Colors.grey), fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.5)),
+        const SizedBox(height: 10),
+        Container(
+          height: 240, 
+          width: 160,
+          decoration: BoxDecoration(
+            color: Colors.black.withOpacity(0.4),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: isPlayer ? Colors.cyanAccent.withOpacity(0.5) : (isFound ? Colors.redAccent.withOpacity(0.5) : Colors.white10),
+              width: 2
+            ),
+            boxShadow: [
+              if (isPlayer || isFound) 
+                BoxShadow(color: (isPlayer ? Colors.cyanAccent : Colors.redAccent).withOpacity(0.2), blurRadius: 20)
+            ]
+          ),
+          child: Stack(
+            alignment: Alignment.bottomCenter,
+            children: [
+              if (isPlayer || isFound)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 40),
+                  child: ModelViewer(
+                    src: avatar3d,
+                    autoRotate: isPlayer, 
+                    cameraControls: false,
+                    backgroundColor: Colors.transparent,
+                    disableZoom: true,
+                  ),
+                )
+              else
+                Center(child: Icon(Icons.person_off_rounded, size: 50, color: Colors.white.withOpacity(0.1))),
+
+              if (isPlayer || isFound)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.1),
+                    borderRadius: const BorderRadius.only(bottomLeft: Radius.circular(18), bottomRight: Radius.circular(18)),
+                    border: Border(top: BorderSide(color: Colors.white.withOpacity(0.1)))
+                  ),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 14,
+                        backgroundColor: Colors.grey,
+                        backgroundImage: (photoUrl.isNotEmpty) ? NetworkImage(photoUrl) : null,
+                        child: (photoUrl.isEmpty) ? const Icon(Icons.person, size: 14, color: Colors.white) : null,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          name, 
+                          style: GoogleFonts.poppins(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLobbyCenterStatus() {
+    if (_foundOpponentData != null) {
+      return Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text("VS", style: GoogleFonts.blackOpsOne(fontSize: 40, color: Colors.white, shadows: [const BoxShadow(color: Colors.red, blurRadius: 20)])),
+          const SizedBox(height: 10),
+          Text("$_startCount", style: GoogleFonts.orbitron(color: Colors.amber, fontSize: 30, fontWeight: FontWeight.bold)),
+        ],
+      );
+    }
+    
+    if (_isSearching) {
+      return RotationTransition(
+        turns: _radarController,
+        child: Container(
+          width: 70, height: 70,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.cyanAccent.withOpacity(0.5), width: 2),
+            gradient: SweepGradient(colors: [Colors.transparent, Colors.cyanAccent.withOpacity(0.8)])
+          ),
+          child: const Center(child: Icon(Icons.search, color: Colors.white)),
+        ),
+      );
+    }
+
+    return const Text("VS", style: TextStyle(color: Colors.white12, fontSize: 30, fontWeight: FontWeight.bold));
+  }
+
+  Widget _buildBottomNavBar(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(30),
+      child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+        _smallBtn(Icons.leaderboard, "RANK", () {
+          HapticFeedback.lightImpact();
+          Navigator.push(context, MaterialPageRoute(builder: (context) => const LeaderboardScreen()));
+        }),
+        const SizedBox(width: 25),
+        if (!_isSearching)
+          GestureDetector(
+            onTap: () {
+              HapticFeedback.mediumImpact();
+              _startMatchmaking();
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 15),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(colors: [Colors.cyan, Colors.blueAccent]),
+                borderRadius: BorderRadius.circular(30),
+                boxShadow: [BoxShadow(color: Colors.cyan.withOpacity(0.4), blurRadius: 15, offset: const Offset(0, 5))]
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.flash_on, color: Colors.white, size: 20),
+                  const SizedBox(width: 10),
+                  Text("BATTLE", style: GoogleFonts.blackOpsOne(color: Colors.white, fontSize: 18, letterSpacing: 2)),
+                ],
+              ),
+            ),
+          )
+        else if (_foundOpponentData == null)
+          _smallBtn(Icons.close, "BATAL", () { 
+            HapticFeedback.mediumImpact();
+            _matchService.cancelSearch(uid); 
+            _cleanupMatch(); 
+          }),
+        const SizedBox(width: 25),
+        _smallBtn(Icons.history, "HISTORY", () {
+           HapticFeedback.lightImpact();
+           Navigator.push(context, MaterialPageRoute(builder: (context) => const HistoryScreen()));
+        }),
+      ]),
+    );
+  }
+
+  Widget _smallBtn(IconData icon, String label, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap, 
+      behavior: HitTestBehavior.opaque,
+      child: Column(children: [
+        Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.white10, shape: BoxShape.circle, border: Border.all(color: Colors.white10)), child: Icon(icon, color: Colors.white70, size: 22)), 
+        const SizedBox(height: 8), 
+        Text(label, style: const TextStyle(color: Colors.white38, fontSize: 10, fontWeight: FontWeight.bold))
+      ])
+    );
+  }
+
+  // ===========================================================================
+  // UI ARENA (GAMEPLAY) - SAMA SEPERTI SEBELUMNYA
+  // ===========================================================================
+
   Widget _buildActiveMatchUI() {
     return StreamBuilder<MatchModel>(
       stream: _matchService.getMatchStream(_activeMatchId!),
       builder: (context, snapshot) {
         if (!snapshot.hasData) return const Scaffold(backgroundColor: Colors.black, body: Center(child: CircularProgressIndicator()));
-        
         MatchModel match = snapshot.data!;
         
         bool amIP1 = match.player1Uid == uid;
@@ -242,7 +549,6 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
           return _buildGameOverScreen(match, amIP1);
         }
 
-        // RESET RONDE (Dipanggil saat stream mendeteksi round naik)
         if (match.currentRound > _lastProcessedRound) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) {
@@ -259,26 +565,15 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
           });
         }
 
-        // LOGIKA SAAT KEDUANYA SUDAH MENJAWAB
         if (match.p1Answer != null && match.p2Answer != null) {
-          
-          // 1. Tampilkan Feedback Visual
           if (!_showFeedback) {
              WidgetsBinding.instance.addPostFrameCallback((_) {
                if (mounted) _calculateLocalFeedback(match, amIP1);
              });
           }
-
-          // 2. Host Memproses Hasil ke Database
           if (amIP1 && !_isHostProcessing) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (mounted) setState(() => _isHostProcessing = true);
-              
-              // [KUNCI KECEPATAN]: Delay hanya 300ms (sangat singkat)
-              // Logikanya: Kita tampilkan hasil, dan hampir bersamaan
-              // kita suruh server ganti ronde. Server butuh waktu ~1 detik.
-              // Jadi total user melihat hasil adalah 0.3s (delay) + 1s (server) = 1.3 detik.
-              // Ini terasa jauuuuh lebih cepat.
               Future.delayed(const Duration(milliseconds: 300), () {
                  if (mounted) _matchService.processRoundResult(match);
               });
@@ -308,8 +603,6 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
                       ),
                     ],
                   ),
-
-                  // Feedback Visual di tengah layar
                   if (_showFeedback)
                     Center(
                       child: ScaleTransition(
@@ -325,21 +618,9 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(
-                                _feedbackText.contains("SALAH") ? Icons.cancel : Icons.check_circle,
-                                color: _feedbackColor,
-                                size: 60,
-                              ),
+                              Icon(_feedbackText.contains("SALAH") ? Icons.cancel : Icons.check_circle, color: _feedbackColor, size: 60),
                               const SizedBox(height: 10),
-                              Text(
-                                _feedbackText,
-                                textAlign: TextAlign.center,
-                                style: GoogleFonts.blackOpsOne(
-                                  color: _feedbackColor,
-                                  fontSize: 24,
-                                  shadows: [Shadow(color: _feedbackColor, blurRadius: 10)]
-                                ),
-                              ),
+                              Text(_feedbackText, textAlign: TextAlign.center, style: GoogleFonts.blackOpsOne(color: _feedbackColor, fontSize: 24, shadows: [Shadow(color: _feedbackColor, blurRadius: 10)])),
                             ],
                           ),
                         ),
@@ -363,8 +644,6 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
       });
     });
   }
-
-  // --- WIDGETS ---
 
   Widget _buildBattleHeader(String myName, int myHp, String oppName, int oppHp, bool amIP1, int round, String matchId) {
     return Padding(
@@ -428,7 +707,7 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
           child: Stack(
             children: [
               AnimatedContainer(
-                duration: const Duration(milliseconds: 300), // Animasi HP lebih cepat juga
+                duration: const Duration(milliseconds: 300),
                 curve: Curves.easeOut,
                 width: 138 * (max(0, hp) / 100),
                 height: 12,
@@ -537,158 +816,6 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
           ],
         ),
       ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_activeMatchId != null) return _buildActiveMatchUI();
-
-    return Scaffold(
-      backgroundColor: const Color(0xFF050010),
-      body: StreamBuilder<UserModel>(
-        stream: _firestoreService.getUserStream(uid),
-        builder: (context, snapshot) {
-          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-          UserModel myUser = snapshot.data!;
-
-          String myAvatarPath = 'assets/models/avatar_default.glb';
-          if (myUser.equippedLoadout['body'] == 'monster') myAvatarPath = 'assets/models/monster.glb';
-          if (myUser.equippedLoadout['body'] == 'teacher') myAvatarPath = 'assets/models/teacher.glb';
-
-          return Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(colors: [Color(0xFF050010), Color(0xFF1A0038)], begin: Alignment.topLeft, end: Alignment.bottomRight)
-            ),
-            child: AnimatedBuilder(
-              animation: _shakeController,
-              builder: (context, child) {
-                final double offset = sin(_shakeController.value * pi * 10.0) * 5.0;
-                return Transform.translate(offset: Offset(offset, 0), child: child);
-              },
-              child: SafeArea(
-                child: Column(
-                  children: [
-                    _buildHUDHeader(myUser),
-                    const Spacer(),
-                    Row(
-                      children: [
-                        Expanded(flex: 3, child: _buildAvatarSlot("KAMU", true, avatarPath: myAvatarPath)),
-                        Expanded(flex: 2, child: _buildMatchCenter()),
-                        Expanded(flex: 3, child: _buildAvatarSlot(_foundOpponentData?['name'] ?? "MENCARI...", false, isFound: _foundOpponentData != null)),
-                      ],
-                    ),
-                    const Spacer(),
-                    _buildBottomNavBar(context),
-                  ],
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildHUDHeader(UserModel user) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 20),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text("ARENA", style: GoogleFonts.orbitron(color: Colors.cyanAccent, fontSize: 18, fontWeight: FontWeight.w900)),
-          Text("MMR: ${user.mmr}", style: GoogleFonts.orbitron(color: Colors.white, fontSize: 14)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAvatarSlot(String label, bool isPlayer, {bool isFound = true, String? avatarPath}) {
-    return Column(children: [
-      Text(label.toUpperCase(), style: GoogleFonts.orbitron(color: isPlayer ? Colors.cyanAccent : Colors.redAccent, fontSize: 10, fontWeight: FontWeight.bold)),
-      const SizedBox(height: 20),
-      Container(
-        height: 220, width: 160,
-        decoration: BoxDecoration(color: Colors.black.withOpacity(0.3), borderRadius: BorderRadius.circular(30), border: Border.all(color: isFound ? (isPlayer ? Colors.cyanAccent.withOpacity(0.3) : Colors.redAccent.withOpacity(0.3)) : Colors.white10)),
-        child: (isPlayer || isFound) 
-          ? RepaintBoundary(child: _build3DModel(avatarPath ?? 'assets/models/avatar_default.glb')) 
-          : Center(child: Icon(Icons.help_outline_rounded, size: 50, color: Colors.white.withOpacity(0.05))),
-      ),
-    ]);
-  }
-
-  Widget _buildMatchCenter() {
-    if (_foundOpponentData != null) {
-      return Column(children: [
-        Text("VS", style: GoogleFonts.orbitron(fontSize: 60, color: Colors.white, fontWeight: FontWeight.w900, fontStyle: FontStyle.italic)),
-        Text("$_startCount", style: GoogleFonts.orbitron(color: Colors.amber, fontSize: 24, fontWeight: FontWeight.bold)),
-      ]);
-    }
-    if (_isSearching) {
-      return RotationTransition(turns: _radarController, child: Container(width: 80, height: 80, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.cyanAccent.withOpacity(0.5), width: 2), gradient: SweepGradient(colors: [Colors.transparent, Colors.cyanAccent.withOpacity(0.6)]))));
-    }
-    return const SizedBox();
-  }
-
-  Widget _buildBottomNavBar(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(30),
-      child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-        
-        // --- TOMBOL LEADERBOARD (UPDATED) ---
-        _smallBtn(Icons.leaderboard, "RANK", () {
-          HapticFeedback.lightImpact();
-          Navigator.push(
-            context, 
-            MaterialPageRoute(builder: (context) => const LeaderboardScreen())
-          );
-        }),
-        
-        const SizedBox(width: 25),
-        
-        // TOMBOL CARI LAWAN (TETAP)
-        if (!_isSearching)
-          GestureDetector(
-            onTap: () {
-              HapticFeedback.mediumImpact();
-              _startMatchmaking();
-            },
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 15),
-              decoration: BoxDecoration(color: Colors.cyanAccent, borderRadius: BorderRadius.circular(40), boxShadow: [BoxShadow(color: Colors.cyanAccent.withOpacity(0.3), blurRadius: 10)]),
-              child: Text("CARI LAWAN", style: GoogleFonts.orbitron(color: Colors.black, fontWeight: FontWeight.w900)),
-            ),
-          )
-        else if (_foundOpponentData == null)
-          _smallBtn(Icons.close, "BATAL", () { 
-            HapticFeedback.mediumImpact();
-            _matchService.cancelSearch(uid); 
-            _cleanupMatch(); 
-          }),
-        
-        const SizedBox(width: 25),
-        
-        // --- TOMBOL HISTORY (UPDATED) ---
-        _smallBtn(Icons.history, "HISTORY", () {
-           HapticFeedback.lightImpact();
-           Navigator.push(
-            context, 
-            MaterialPageRoute(builder: (context) => const HistoryScreen())
-          );
-        }),
-      ]),
-    );
-  }
-
-  Widget _smallBtn(IconData icon, String label, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap, 
-      behavior: HitTestBehavior.opaque,
-      child: Column(children: [
-        Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: Colors.white10, shape: BoxShape.circle), child: Icon(icon, color: Colors.white70, size: 20)), 
-        const SizedBox(height: 5), 
-        Text(label, style: const TextStyle(color: Colors.white38, fontSize: 8))
-      ])
     );
   }
 }
