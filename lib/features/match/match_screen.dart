@@ -9,7 +9,7 @@ import 'package:model_viewer_plus/model_viewer_plus.dart';
 
 import '../../models/match_model.dart';
 import '../../models/user_model.dart';
-import '../../core/services/firestore_service.dart'; // Pastikan path ini sesuai
+import '../../core/services/firestore_service.dart';
 import 'match_service.dart';
 
 class MatchScreen extends StatefulWidget {
@@ -24,16 +24,17 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
   late AnimationController _shakeController;
 
   final MatchService _matchService = MatchService();
-  final FirestoreService _firestoreService = FirestoreService(); // Instance Service
+  final FirestoreService _firestoreService = FirestoreService();
   final String uid = FirebaseAuth.instance.currentUser!.uid;
 
-  // --- STATE PERTANDINGAN ---
+  // --- STATE ---
   String? _activeMatchId;
   bool _isSearching = false;
   Map<String, dynamic>? _foundOpponentData;
   int _startCount = 3;
+  StreamSubscription? _matchSubscription;
 
-  // --- STATE ARENA (REAL-TIME) ---
+  // --- GAME STATE ---
   int _timeLeft = 10;
   Timer? _gameTimer;
   Timer? _heartbeatTimer;
@@ -54,11 +55,14 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
     _shakeController.dispose();
     _gameTimer?.cancel();
     _heartbeatTimer?.cancel();
-    if (_isSearching) _matchService.cancelSearch(uid);
+    _matchSubscription?.cancel();
+    
+    if (_isSearching && _activeMatchId == null) {
+      _matchService.cancelSearch(uid);
+    }
     super.dispose();
   }
 
-  // --- FUNGSI RESET & PEMBERSIHAN ---
   void _cleanupMatch() {
     if (mounted) {
       setState(() {
@@ -70,60 +74,81 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
         _hasAnswered = false;
         _timeLeft = 10;
       });
-      _gameTimer?.cancel();
-      _heartbeatTimer?.cancel();
     }
+    _gameTimer?.cancel();
+    _heartbeatTimer?.cancel();
+    _matchSubscription?.cancel(); 
   }
 
   // ===========================================================================
-  // LOGIKA MATCHMAKING
+  // MATCHMAKING LOGIC (FINAL & STABLE)
   // ===========================================================================
 
   void _startMatchmaking() async {
     _cleanupMatch();
     setState(() => _isSearching = true);
+    _radarController.repeat();
     
-    // Mulai Heartbeat agar sistem tahu kita aktif mencari
-    _heartbeatTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
-      if (_isSearching && _foundOpponentData == null) {
-        _matchService.updateHeartbeat(uid);
-      } else {
+    // Heartbeat Loop
+    _heartbeatTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      if (!mounted || !_isSearching || _foundOpponentData != null) {
         timer.cancel();
+        return;
       }
+      _matchService.updateHeartbeat(uid);
     });
 
-    _radarController.repeat();
-
     try {
-      // Menggunakan FirestoreService untuk ambil data user
-      var userStream = _firestoreService.getUserStream(uid);
-      UserModel user = await userStream.first;
+      DocumentSnapshot userDoc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      if (!userDoc.exists) throw Exception("User data missing");
+      UserModel user = UserModel.fromMap(userDoc.data() as Map<String, dynamic>, uid);
       
       String result = await _matchService.findMatch(user);
 
+      if (!mounted || !_isSearching) return; 
+
       if (result == "WAITING") {
+        debugPrint("Masuk Queue, Menunggu lawan...");
         _listenForQueueMatch(uid);
       } else if (result.isNotEmpty) {
+        debugPrint("Match ditemukan: $result");
         _handleMatchFound(result, user.uid);
+      } else {
+        // [MODIFIKASI] Jika error (result kosong), jangan tutup UI.
+        // Beri tahu user, tapi biarkan mereka tetap di layar 'Mencari'
+        // agar heartbeat tetap jalan dan mereka tetap terdaftar di queue.
+        debugPrint("Warning: Find Match returned empty. Staying in Queue.");
+        _listenForQueueMatch(uid); // Fallback: Dengarkan saja kalau ada yg ambil
       }
     } catch (e) {
-      debugPrint("Error Matchmaking: $e");
-      setState(() => _isSearching = false);
+      debugPrint("UI Error: $e");
+      if (mounted && _isSearching) {
+        // Jangan tampilkan snackbar merah yang mengganggu, cukup log saja
+        // Kecuali error fatal
+        if (e.toString().contains("INDEX")) {
+           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Index Error. Cek Console."), backgroundColor: Colors.red));
+        }
+      }
     }
   }
 
   void _listenForQueueMatch(String myUid) {
-    FirebaseFirestore.instance
+    _matchSubscription?.cancel();
+    
+    _matchSubscription = FirebaseFirestore.instance
         .collection('matches')
         .where('player1Uid', isEqualTo: myUid)
         .where('status', isEqualTo: 'playing')
-        .limit(1) // Optimasi query limit
         .snapshots()
-        .listen((snapshot) {
-      if (snapshot.docs.isNotEmpty && mounted && _isSearching && _activeMatchId == null) {
-        _handleMatchFound(snapshot.docs.first.id, myUid);
-      }
-    });
+        .listen(
+      (snapshot) {
+        if (snapshot.docs.isNotEmpty && mounted && _isSearching && _activeMatchId == null) {
+          _matchSubscription?.cancel();
+          _handleMatchFound(snapshot.docs.first.id, myUid);
+        }
+      },
+      onError: (e) => debugPrint("Listener Error: $e"),
+    );
   }
 
   void _handleMatchFound(String matchId, String myUid) async {
@@ -144,15 +169,14 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
       
       _shakeController.forward(from: 0);
 
-      // Countdown transisi VS
       for (int i = 3; i >= 1; i--) {
-        if (!mounted) return;
+        if (!mounted || !_isSearching) return; 
         setState(() => _startCount = i);
         HapticFeedback.lightImpact();
         await Future.delayed(const Duration(seconds: 1));
       }
 
-      if (mounted) {
+      if (mounted && _isSearching) {
         setState(() {
           _isSearching = false;
           _activeMatchId = matchId;
@@ -161,26 +185,21 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
     }
   }
 
-  // ===========================================================================
-  // ARENA PERTANDINGAN (FULL SCREEN & SYNCED)
-  // ===========================================================================
-
+  // ... (SISA KODE UI SAMA PERSIS)
+  
   Widget _buildActiveMatchUI() {
     return StreamBuilder<MatchModel>(
       stream: _matchService.getMatchStream(_activeMatchId!),
       builder: (context, snapshot) {
         if (!snapshot.hasData) return const Scaffold(backgroundColor: Colors.black, body: Center(child: CircularProgressIndicator()));
-        
         MatchModel match = snapshot.data!;
         bool isP1 = match.player1Uid == uid;
 
-        // 1. DETEKSI GAME OVER (SINKRON)
         if (match.status == 'finished') {
           if (isP1) _matchService.finalizeMatchStats(match);
           return _buildGameOverScreen(match, isP1);
         }
 
-        // 2. SINKRONISASI PERGANTIAN RONDE
         if (match.currentRound > _lastProcessedRound) {
           _lastProcessedRound = match.currentRound;
           _hasAnswered = false;
@@ -189,7 +208,6 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
           _startRoundTimer();
         }
 
-        // 3. LOGIKA HOST: HITUNG DAMAGE JIKA KEDUANYA SUDAH MENJAWAB
         if (isP1 && match.p1Answer != null && match.p2Answer != null) {
           _matchService.processRoundResult(match);
         }
@@ -197,11 +215,7 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
         return Scaffold(
           body: Container(
             decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Color(0xFF050010), Color(0xFF1A0038)],
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter
-              )
+              gradient: LinearGradient(colors: [Color(0xFF050010), Color(0xFF1A0038)], begin: Alignment.topCenter, end: Alignment.bottomCenter)
             ),
             child: SafeArea(
               child: Column(
@@ -210,14 +224,8 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
                   Expanded(
                     child: Row(
                       children: [
-                        // PLAYER KITA (KIRI)
                         Expanded(flex: 2, child: _build3DModel(true, autoRotate: false)),
-                        
-                        // TENGAH (SOAL)
                         Expanded(flex: 5, child: _buildQuestionArena(match, isP1)),
-                        
-                        // PLAYER LAWAN (KANAN)
-                        // [PERBAIKAN] Transform dihapus agar tidak error layar hitam
                         Expanded(flex: 2, child: _build3DModel(false, autoRotate: false)),
                       ],
                     ),
@@ -236,11 +244,7 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
     _gameTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted) return;
       setState(() {
-        if (_timeLeft > 0) {
-          _timeLeft--;
-        } else {
-          timer.cancel();
-        }
+        if (_timeLeft > 0) _timeLeft--; else timer.cancel();
       });
     });
   }
@@ -279,7 +283,7 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF1A0038),
         title: const Text("MENYERAH?", style: TextStyle(color: Colors.white)),
-        content: const Text("Kamu akan kehilangan MMR dan lawan otomatis menang.", style: TextStyle(color: Colors.white70)),
+        content: const Text("Kamu akan kalah otomatis.", style: TextStyle(color: Colors.white70)),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("BATAL")),
           TextButton(onPressed: () => Navigator.pop(context, true), child: const Text("YA", style: TextStyle(color: Colors.redAccent))),
@@ -307,11 +311,7 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 500),
             width: 140 * (max(0, hp) / 100),
-            decoration: BoxDecoration(
-              color: color, 
-              borderRadius: BorderRadius.circular(10),
-              boxShadow: [BoxShadow(color: color.withOpacity(0.5), blurRadius: 10)]
-            ),
+            decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(10), boxShadow: [BoxShadow(color: color.withOpacity(0.5), blurRadius: 10)]),
           ),
         ),
       ],
@@ -341,10 +341,7 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
                     _matchService.submitAnswer(match.matchId, uid, option, taken, isP1);
                     setState(() => _hasAnswered = true);
                   },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1A0038),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: const BorderSide(color: Colors.white10)),
-                  ),
+                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1A0038), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: const BorderSide(color: Colors.white10))),
                   child: Text(option, style: const TextStyle(color: Colors.white, fontSize: 12)),
                 );
               },
@@ -357,15 +354,13 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
   }
 
   Widget _buildGameOverScreen(MatchModel match, bool isP1) {
-    // Penentuan pemenang berdasarkan HP akhir di Firestore
     bool iWin = false;
     if (isP1 && match.p1Health > match.p2Health) iWin = true;
     if (!isP1 && match.p2Health > match.p1Health) iWin = true;
-    
-    // Jika Draw HP, bandingkan Score
     if (match.p1Health == match.p2Health) {
       if (isP1 && match.p1Score > match.p2Score) iWin = true;
       if (!isP1 && match.p2Score > match.p1Score) iWin = true;
+      if (isP1 && match.p1Score == match.p2Score) iWin = true;
     }
 
     return Scaffold(
@@ -378,7 +373,7 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
             const SizedBox(height: 20),
             Text(iWin ? "VICTORY" : "DEFEAT", style: GoogleFonts.orbitron(color: Colors.white, fontSize: 50, fontWeight: FontWeight.w900)),
             const SizedBox(height: 10),
-            Text(iWin ? "+20 MMR" : "-10 MMR", style: TextStyle(color: iWin ? Colors.green : Colors.red)),
+            Text(iWin ? "+20 MMR" : "-10 MMR", style: TextStyle(color: iWin ? Colors.green : Colors.red, fontSize: 20, fontWeight: FontWeight.bold)),
             const SizedBox(height: 50),
             ElevatedButton(
               onPressed: _cleanupMatch, 
@@ -391,45 +386,21 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
     );
   }
 
-  // ===========================================================================
-  // UI LOBBY
-  // ===========================================================================
-
-  // ===========================================================================
-  // UI LOBBY (PERBAIKAN ERROR STREAM)
-  // ===========================================================================
-
   @override
   Widget build(BuildContext context) {
-    // Jika sedang dalam match, tampilkan UI Arena
     if (_activeMatchId != null) return _buildActiveMatchUI();
 
     return Scaffold(
       backgroundColor: const Color(0xFF050010),
-      // [FIX] Gunakan Stream<UserModel> langsung dari Service
       body: StreamBuilder<UserModel>(
         stream: _firestoreService.getUserStream(uid),
         builder: (context, snapshot) {
-          // 1. Loading State
-          if (snapshot.connectionState == ConnectionState.waiting) {
-             return const Center(child: CircularProgressIndicator());
-          }
-
-          // 2. Error / Data Kosong State
-          if (!snapshot.hasData) {
-            return const Center(child: Text("Gagal memuat data user", style: TextStyle(color: Colors.white)));
-          }
-
-          // 3. Data Ready (Sudah otomatis jadi UserModel berkat Service)
+          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
           UserModel myUser = snapshot.data!;
 
           return Container(
             decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Color(0xFF050010), Color(0xFF1A0038)], 
-                begin: Alignment.topLeft, 
-                end: Alignment.bottomRight
-              )
+              gradient: LinearGradient(colors: [Color(0xFF050010), Color(0xFF1A0038)], begin: Alignment.topLeft, end: Alignment.bottomRight)
             ),
             child: AnimatedBuilder(
               animation: _shakeController,
@@ -446,18 +417,11 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
                       children: [
                         Expanded(flex: 3, child: _buildAvatarSlot("KAMU", true)),
                         Expanded(flex: 2, child: _buildMatchCenter()),
-                        Expanded(
-                          flex: 3, 
-                          child: _buildAvatarSlot(
-                            _foundOpponentData?['name'] ?? "MENCARI...", 
-                            false, 
-                            isFound: _foundOpponentData != null
-                          )
-                        ),
+                        Expanded(flex: 3, child: _buildAvatarSlot(_foundOpponentData?['name'] ?? "MENCARI...", false, isFound: _foundOpponentData != null)),
                       ],
                     ),
                     const Spacer(),
-                    _buildBottomNavBar(),
+                    _buildBottomNavBar(context),
                   ],
                 ),
               ),
@@ -467,6 +431,7 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
       ),
     );
   }
+
   Widget _buildHUDHeader(UserModel user) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 20),
@@ -505,15 +470,26 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
     return const SizedBox();
   }
 
-  Widget _buildBottomNavBar() {
+  Widget _buildBottomNavBar(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(30),
       child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-        _smallBtn(Icons.leaderboard, "RANK", () {}),
+        _smallBtn(Icons.leaderboard, "RANK", () {
+          HapticFeedback.lightImpact();
+          showDialog(context: context, builder: (context) => AlertDialog(
+            backgroundColor: const Color(0xFF1A0038),
+            title: const Text("Leaderboard", style: TextStyle(color: Colors.white)),
+            content: const Text("Fitur Leaderboard segera hadir!", style: TextStyle(color: Colors.white70)),
+            actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("OK"))],
+          ));
+        }),
         const SizedBox(width: 25),
         if (!_isSearching)
           GestureDetector(
-            onTap: _startMatchmaking,
+            onTap: () {
+              HapticFeedback.mediumImpact();
+              _startMatchmaking();
+            },
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 15),
               decoration: BoxDecoration(color: Colors.cyanAccent, borderRadius: BorderRadius.circular(40), boxShadow: [BoxShadow(color: Colors.cyanAccent.withOpacity(0.3), blurRadius: 10)]),
@@ -521,15 +497,35 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
             ),
           )
         else if (_foundOpponentData == null)
-          _smallBtn(Icons.close, "BATAL", () { _matchService.cancelSearch(uid); _cleanupMatch(); }),
+          _smallBtn(Icons.close, "BATAL", () { 
+            HapticFeedback.mediumImpact();
+            _matchService.cancelSearch(uid); 
+            _cleanupMatch(); 
+          }),
         const SizedBox(width: 25),
-        _smallBtn(Icons.history, "HISTORY", () {}),
+        _smallBtn(Icons.history, "HISTORY", () {
+           HapticFeedback.lightImpact();
+           showDialog(context: context, builder: (context) => AlertDialog(
+            backgroundColor: const Color(0xFF1A0038),
+            title: const Text("Riwayat", style: TextStyle(color: Colors.white)),
+            content: const Text("Riwayat pertandingan kosong.", style: TextStyle(color: Colors.white70)),
+            actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("OK"))],
+          ));
+        }),
       ]),
     );
   }
 
   Widget _smallBtn(IconData icon, String label, VoidCallback onTap) {
-    return GestureDetector(onTap: onTap, child: Column(children: [Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: Colors.white10, shape: BoxShape.circle), child: Icon(icon, color: Colors.white70, size: 20)), const SizedBox(height: 5), Text(label, style: const TextStyle(color: Colors.white38, fontSize: 8))]));
+    return GestureDetector(
+      onTap: onTap, 
+      behavior: HitTestBehavior.opaque,
+      child: Column(children: [
+        Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: Colors.white10, shape: BoxShape.circle), child: Icon(icon, color: Colors.white70, size: 20)), 
+        const SizedBox(height: 5), 
+        Text(label, style: const TextStyle(color: Colors.white38, fontSize: 8))
+      ])
+    );
   }
 
   Widget _build3DModel(bool isPlayer, {bool autoRotate = true}) {
