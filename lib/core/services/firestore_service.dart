@@ -1,5 +1,4 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import '../../models/user_model.dart';
 
@@ -170,25 +169,16 @@ class FirestoreService {
   }
 
   // --- 7. LEADERBOARD ---
-  Stream<List<Map<String, dynamic>>> getLeaderboard() {
-    // [PERBAIKAN] Sorting berdasarkan 'total_xp' agar ranking adil (akumulatif)
-    // Jika pakai 'current_xp', rank akan turun saat user naik level (karena current_xp reset)
-    return _db
-        .collection('users')
-        .orderBy('total_xp', descending: true) 
+  Stream<List<UserModel>> getLeaderboard() {
+    return _db.collection('users')
+        .orderBy('mmr', descending: true)
         .limit(20)
         .snapshots()
         .map((snapshot) {
-      return snapshot.docs.map((doc) {
-        final data = doc.data();
-        return {
-          'username': data['username'] ?? 'Jagoan',
-          'score': (data['total_xp'] ?? 0).toInt(), // Tampilkan Total XP
-          'photoUrl': data['photoUrl'] ?? '',
-          'isMe': doc.id == FirebaseAuth.instance.currentUser?.uid, 
-        };
-      }).toList();
-    });
+          return snapshot.docs.map((doc) {
+            return UserModel.fromMap(doc.data(), doc.id);
+          }).toList();
+        });
   }
 
   // --- 8. CARI LAWAN (FALLBACK MATCHMAKING) ---

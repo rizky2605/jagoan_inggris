@@ -6,11 +6,12 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:model_viewer_plus/model_viewer_plus.dart';
-
 import '../../models/match_model.dart';
 import '../../models/user_model.dart';
 import '../../core/services/firestore_service.dart';
 import 'match_service.dart';
+import 'leaderboard_screen.dart';
+import 'history_screen.dart';
 
 class MatchScreen extends StatefulWidget {
   const MatchScreen({super.key});
@@ -633,16 +634,19 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
     return Padding(
       padding: const EdgeInsets.all(30),
       child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+        
+        // --- TOMBOL LEADERBOARD (UPDATED) ---
         _smallBtn(Icons.leaderboard, "RANK", () {
           HapticFeedback.lightImpact();
-          showDialog(context: context, builder: (context) => AlertDialog(
-            backgroundColor: const Color(0xFF1A0038),
-            title: const Text("Leaderboard", style: TextStyle(color: Colors.white)),
-            content: const Text("Fitur Leaderboard segera hadir!", style: TextStyle(color: Colors.white70)),
-            actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("OK"))],
-          ));
+          Navigator.push(
+            context, 
+            MaterialPageRoute(builder: (context) => const LeaderboardScreen())
+          );
         }),
+        
         const SizedBox(width: 25),
+        
+        // TOMBOL CARI LAWAN (TETAP)
         if (!_isSearching)
           GestureDetector(
             onTap: () {
@@ -661,15 +665,16 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
             _matchService.cancelSearch(uid); 
             _cleanupMatch(); 
           }),
+        
         const SizedBox(width: 25),
+        
+        // --- TOMBOL HISTORY (UPDATED) ---
         _smallBtn(Icons.history, "HISTORY", () {
            HapticFeedback.lightImpact();
-           showDialog(context: context, builder: (context) => AlertDialog(
-            backgroundColor: const Color(0xFF1A0038),
-            title: const Text("Riwayat", style: TextStyle(color: Colors.white)),
-            content: const Text("Riwayat pertandingan kosong.", style: TextStyle(color: Colors.white70)),
-            actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("OK"))],
-          ));
+           Navigator.push(
+            context, 
+            MaterialPageRoute(builder: (context) => const HistoryScreen())
+          );
         }),
       ]),
     );

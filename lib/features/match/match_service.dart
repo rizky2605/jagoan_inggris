@@ -13,27 +13,24 @@ class MatchService {
   
   Future<String> findMatch(UserModel user) async {
     try {
-      // 1. Masukkan diri ke antrean (Status: searching)
-      // Gunakan set dengan merge agar tidak menimpa data jika sudah ada
+      // 1. Masukkan diri ke antrean
       await _db.collection('match_queue').doc(user.uid).set({
         'uid': user.uid,
         'username': user.username,
         'photoUrl': user.photoUrl,
         'mmr': user.mmr,
-        // Simpan avatar path agar musuh bisa melihatnya
         'avatarPath': _getAvatarPath(user.equippedLoadout['body']),
         'status': 'searching', 
         'timestamp': FieldValue.serverTimestamp(),
         'lastSeen': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
-      // Beri jeda sedikit agar data kita masuk dulu (mencegah glitch pembacaan sendiri)
       await Future.delayed(const Duration(milliseconds: 500));
 
       // 2. Cari Lawan
       QuerySnapshot queueSnapshot = await _db.collection('match_queue')
           .where('status', isEqualTo: 'searching')
-          .orderBy('timestamp', descending: false) // FIFO
+          .orderBy('timestamp', descending: false)
           .limit(10)
           .get();
 
@@ -41,27 +38,24 @@ class MatchService {
       DateTime threshold = DateTime.now().subtract(const Duration(seconds: 40));
 
       for (var doc in queueSnapshot.docs) {
-        // Jangan lawan diri sendiri
         if (doc['uid'] == user.uid) continue;
 
-        // Cek User Aktif (Safe Check)
         try {
           if (doc.data() != null && (doc.data() as Map).containsKey('lastSeen')) {
             Timestamp? ts = doc['lastSeen'];
-            // Jika null (baru banget join), anggap aktif. Jika ada tanggal, cek threshold.
             if (ts != null && ts.toDate().isBefore(threshold)) {
-              continue; // Skip user hantu
+              continue; 
             }
           }
         } catch (e) {
-          continue; // Skip jika data error
+          continue; 
         }
 
         opponentDoc = doc;
         break; 
       }
 
-      // 3. Transaksi (Mencoba Match)
+      // 3. Transaksi
       if (opponentDoc != null) {
         try {
           return await _db.runTransaction((transaction) async {
@@ -72,7 +66,6 @@ class MatchService {
 
             String matchId = _db.collection('matches').doc().id; 
             
-            // Ambil avatar lawan (Safe)
             String oppAvatar = 'assets/models/avatar_default.glb';
             try {
               oppAvatar = freshOpponent['avatarPath'] ?? 'assets/models/avatar_default.glb';
@@ -99,44 +92,35 @@ class MatchService {
               currentQuestion: _getRandomQuestion(), 
             );
 
-            // Hapus keduanya dari queue
             transaction.delete(freshOpponent.reference);
             transaction.delete(_db.collection('match_queue').doc(user.uid));
             
-            // Buat Room
             transaction.set(_db.collection('matches').doc(matchId), newMatch.toMap());
             
             return matchId;
           });
         } catch (e) {
-          // [FIX UTAMA] Jika transaksi gagal (misal lawan diambil orang lain duluan)
-          // JANGAN ERROR. Tapi kembali ke mode MENUNGGU.
           print("Tabrakan Transaksi (Wajar): $e");
           return "WAITING"; 
         }
       } else {
-        // Tidak ada lawan, kita menunggu
         return "WAITING"; 
       }
 
     } catch (e) {
       print("Global Match Error: $e");
-      // Jika error index, lempar agar UI tahu. Jika error lain, tetap waiting.
       if (e.toString().contains("failed-precondition")) {
         throw Exception("INDEX_MISSING");
       }
-      return "WAITING"; // Fallback aman
+      return "WAITING"; 
     }
   }
 
-  // Helper Avatar
   String _getAvatarPath(String? itemId) {
     if (itemId == 'monster') return 'assets/models/monster.glb';
     if (itemId == 'teacher') return 'assets/models/teacher.glb';
     return 'assets/models/avatar_default.glb';
   }
-
-  // --- SISA FUNGSI (TIDAK BERUBAH) ---
 
   Future<void> cancelSearch(String uid) async {
     try { await _db.collection('match_queue').doc(uid).delete(); } catch (e) {}
@@ -167,7 +151,6 @@ class MatchService {
     int p1NewScore = match.p1Score;
     int p2NewScore = match.p2Score;
 
-    // FIX Waktu Null = Sangat Lambat
     int t1 = match.p1Time ?? 99999999;
     int t2 = match.p2Time ?? 99999999;
 
@@ -245,5 +228,23 @@ class MatchService {
       {'question': 'We ___ busy yesterday.', 'options': ['Was', 'Were', 'Are', 'Is'], 'correctAnswer': 'Were'},
     ];
     return questionBank[Random().nextInt(questionBank.length)];
+  }
+
+  // --- HISTORY MATCH (FIXED WARNING) ---
+  Stream<List<MatchModel>> getMatchHistory(String uid) {
+    // Kita hapus stream1 dan stream2 karena tidak dipakai.
+    // Kita langsung gunakan query umum + filter client-side agar simple.
+    
+    return _db.collection('matches')
+        .where('status', isEqualTo: 'finished')
+        .limit(50) // Ambil 50 match terakhir secara global
+        .snapshots()
+        .map((snapshot) {
+          // Ubah ke Model
+          var allMatches = snapshot.docs.map((d) => MatchModel.fromMap(d.data())).toList();
+          
+          // Filter: Hanya ambil match yang mengandung UID kita
+          return allMatches.where((m) => m.player1Uid == uid || m.player2Uid == uid).toList();
+        });
   }
 }
