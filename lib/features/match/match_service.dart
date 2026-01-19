@@ -7,117 +7,147 @@ import '../../models/user_model.dart';
 class MatchService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  // Helper untuk mendapatkan path avatar dari ID item
-  String _getAvatarPath(String? itemId) {
-    // Logika sederhana: Jika ID-nya 'monster', pakai monster.glb, default avatar_default.glb
-    // Anda bisa memperluas ini nanti sesuai item shop Anda
-    if (itemId == 'monster') return 'assets/models/monster.glb';
-    if (itemId == 'teacher') return 'assets/models/teacher.glb';
-    return 'assets/models/avatar_default.glb';
-  }
-
+  // ===========================================================================
+  // 1. MATCHMAKING SYSTEM (FAIL-SAFE)
+  // ===========================================================================
+  
   Future<String> findMatch(UserModel user) async {
     try {
-      // Ambil Avatar User saat ini
-      String myAvatarPath = _getAvatarPath(user.equippedLoadout['body']);
-
-      // 1. Daftar Antrean (Sertakan Avatar Path)
+      // 1. Masukkan diri ke antrean (Status: searching)
+      // Gunakan set dengan merge agar tidak menimpa data jika sudah ada
       await _db.collection('match_queue').doc(user.uid).set({
         'uid': user.uid,
         'username': user.username,
         'photoUrl': user.photoUrl,
         'mmr': user.mmr,
-        'avatarPath': myAvatarPath, // [BARU] Simpan avatar ke queue
+        // Simpan avatar path agar musuh bisa melihatnya
+        'avatarPath': _getAvatarPath(user.equippedLoadout['body']),
         'status': 'searching', 
         'timestamp': FieldValue.serverTimestamp(),
         'lastSeen': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
-      // 2. Query Lawan (FIFO)
+      // Beri jeda sedikit agar data kita masuk dulu (mencegah glitch pembacaan sendiri)
+      await Future.delayed(const Duration(milliseconds: 500));
+
+      // 2. Cari Lawan
       QuerySnapshot queueSnapshot = await _db.collection('match_queue')
           .where('status', isEqualTo: 'searching')
-          .orderBy('timestamp', descending: false) 
+          .orderBy('timestamp', descending: false) // FIFO
           .limit(10)
           .get();
 
       DocumentSnapshot? opponentDoc;
-      DateTime threshold = DateTime.now().subtract(const Duration(seconds: 30));
+      DateTime threshold = DateTime.now().subtract(const Duration(seconds: 40));
 
       for (var doc in queueSnapshot.docs) {
+        // Jangan lawan diri sendiri
         if (doc['uid'] == user.uid) continue;
 
-        if (doc.data() != null && (doc.data() as Map).containsKey('lastSeen')) {
-          Timestamp? ts = doc['lastSeen'];
-          if (ts != null && ts.toDate().isBefore(threshold)) continue; 
+        // Cek User Aktif (Safe Check)
+        try {
+          if (doc.data() != null && (doc.data() as Map).containsKey('lastSeen')) {
+            Timestamp? ts = doc['lastSeen'];
+            // Jika null (baru banget join), anggap aktif. Jika ada tanggal, cek threshold.
+            if (ts != null && ts.toDate().isBefore(threshold)) {
+              continue; // Skip user hantu
+            }
+          }
+        } catch (e) {
+          continue; // Skip jika data error
         }
 
         opponentDoc = doc;
         break; 
       }
 
+      // 3. Transaksi (Mencoba Match)
       if (opponentDoc != null) {
-        return await _db.runTransaction((transaction) async {
-          DocumentSnapshot freshOpponent = await transaction.get(opponentDoc!.reference);
-          if (!freshOpponent.exists) throw Exception("Lawan hilang.");
+        try {
+          return await _db.runTransaction((transaction) async {
+            DocumentSnapshot freshOpponent = await transaction.get(opponentDoc!.reference);
+            if (!freshOpponent.exists) {
+              throw Exception("Lawan sudah diambil.");
+            }
 
-          String matchId = _db.collection('matches').doc().id; 
-          
-          // Ambil avatar lawan dari queue
-          String opponentAvatar = freshOpponent['avatarPath'] ?? 'assets/models/avatar_default.glb';
+            String matchId = _db.collection('matches').doc().id; 
+            
+            // Ambil avatar lawan (Safe)
+            String oppAvatar = 'assets/models/avatar_default.glb';
+            try {
+              oppAvatar = freshOpponent['avatarPath'] ?? 'assets/models/avatar_default.glb';
+            } catch (_) {}
 
-          MatchModel newMatch = MatchModel(
-            matchId: matchId,
-            player1Uid: freshOpponent['uid'],
-            player2Uid: user.uid,
-            player1Name: freshOpponent['username'],
-            player2Name: user.username,
-            p1PhotoUrl: freshOpponent['photoUrl'] ?? '', 
-            p2PhotoUrl: user.photoUrl,
-            // [BARU] Masukkan data avatar P1 dan P2
-            p1Avatar: opponentAvatar, 
-            p2Avatar: myAvatarPath, 
-            status: 'playing',      
-            currentRound: 1,
-            p1Health: 100,
-            p2Health: 100,
-            p1Score: 0,
-            p2Score: 0,
-            currentQuestion: _getRandomQuestion(), 
-          );
+            String myAvatar = _getAvatarPath(user.equippedLoadout['body']);
 
-          transaction.delete(freshOpponent.reference);
-          transaction.delete(_db.collection('match_queue').doc(user.uid));
-          transaction.set(_db.collection('matches').doc(matchId), newMatch.toMap());
-          
-          return matchId;
-        });
+            MatchModel newMatch = MatchModel(
+              matchId: matchId,
+              player1Uid: freshOpponent['uid'],
+              player2Uid: user.uid,
+              player1Name: freshOpponent['username'],
+              player2Name: user.username,
+              p1PhotoUrl: freshOpponent['photoUrl'] ?? '', 
+              p2PhotoUrl: user.photoUrl,
+              p1Avatar: oppAvatar, 
+              p2Avatar: myAvatar,
+              status: 'playing',      
+              currentRound: 1,
+              p1Health: 100,
+              p2Health: 100,
+              p1Score: 0,
+              p2Score: 0,
+              currentQuestion: _getRandomQuestion(), 
+            );
+
+            // Hapus keduanya dari queue
+            transaction.delete(freshOpponent.reference);
+            transaction.delete(_db.collection('match_queue').doc(user.uid));
+            
+            // Buat Room
+            transaction.set(_db.collection('matches').doc(matchId), newMatch.toMap());
+            
+            return matchId;
+          });
+        } catch (e) {
+          // [FIX UTAMA] Jika transaksi gagal (misal lawan diambil orang lain duluan)
+          // JANGAN ERROR. Tapi kembali ke mode MENUNGGU.
+          print("Tabrakan Transaksi (Wajar): $e");
+          return "WAITING"; 
+        }
       } else {
+        // Tidak ada lawan, kita menunggu
         return "WAITING"; 
       }
 
     } catch (e) {
-      print("Matchmaking Error: $e");
-      return "";
+      print("Global Match Error: $e");
+      // Jika error index, lempar agar UI tahu. Jika error lain, tetap waiting.
+      if (e.toString().contains("failed-precondition")) {
+        throw Exception("INDEX_MISSING");
+      }
+      return "WAITING"; // Fallback aman
     }
   }
 
-  // ... (Sisa fungsi cancelSearch, updateHeartbeat, submitAnswer, dll SAMA SEPERTI SEBELUMNYA)
-  // Tidak perlu diubah, copy saja dari kode sebelumnya.
-  
+  // Helper Avatar
+  String _getAvatarPath(String? itemId) {
+    if (itemId == 'monster') return 'assets/models/monster.glb';
+    if (itemId == 'teacher') return 'assets/models/teacher.glb';
+    return 'assets/models/avatar_default.glb';
+  }
+
+  // --- SISA FUNGSI (TIDAK BERUBAH) ---
+
   Future<void> cancelSearch(String uid) async {
-    try {
-      await _db.collection('match_queue').doc(uid).delete();
-    } catch (e) { print("Error cancel search: $e"); }
+    try { await _db.collection('match_queue').doc(uid).delete(); } catch (e) {}
   }
 
   Future<void> updateHeartbeat(String uid) async {
     try {
-      await _db.collection('match_queue').doc(uid).update({
-        'lastSeen': FieldValue.serverTimestamp(),
-      });
+      await _db.collection('match_queue').doc(uid).update({'lastSeen': FieldValue.serverTimestamp()});
     } catch (e) {}
   }
-
+  
   Future<void> submitAnswer(String matchId, String uid, String answer, int timeTaken, bool isPlayer1) async {
     await _db.collection('matches').doc(matchId).update({
       isPlayer1 ? 'p1Answer' : 'p2Answer': answer,
@@ -137,6 +167,10 @@ class MatchService {
     int p1NewScore = match.p1Score;
     int p2NewScore = match.p2Score;
 
+    // FIX Waktu Null = Sangat Lambat
+    int t1 = match.p1Time ?? 99999999;
+    int t2 = match.p2Time ?? 99999999;
+
     const int damageWrong = 20;       
     const int damageSlow = 5;         
     const int damageBothWrong = 10;   
@@ -147,8 +181,6 @@ class MatchService {
     } else if (!p1Correct && p2Correct) {
       p1NewHealth -= damageWrong; p2NewScore += scoreWin;
     } else if (p1Correct && p2Correct) {
-      int t1 = match.p1Time ?? 999999;
-      int t2 = match.p2Time ?? 999999;
       if (t1 < t2) { p2NewHealth -= damageSlow; p1NewScore += scoreWin; } 
       else if (t2 < t1) { p1NewHealth -= damageSlow; p2NewScore += scoreWin; } 
       else { p1NewScore += 10; p2NewScore += 10; }
@@ -208,7 +240,9 @@ class MatchService {
     final List<Map<String, dynamic>> questionBank = [
       {'question': 'I ___ a student.', 'options': ['Am', 'Is', 'Are', 'Be'], 'correctAnswer': 'Am'},
       {'question': 'She ___ to school.', 'options': ['Go', 'Goes', 'Went', 'Gone'], 'correctAnswer': 'Goes'},
-      {'question': 'Opposite of "Big"', 'options': ['Large', 'Small', 'Huge', 'Giant'], 'correctAnswer': 'Small'},
+      {'question': 'They ___ football now.', 'options': ['Play', 'Played', 'Are playing', 'Is playing'], 'correctAnswer': 'Are playing'},
+      {'question': 'Opposite of "Happy"', 'options': ['Sad', 'Angry', 'Glad', 'Joy'], 'correctAnswer': 'Sad'},
+      {'question': 'We ___ busy yesterday.', 'options': ['Was', 'Were', 'Are', 'Is'], 'correctAnswer': 'Were'},
     ];
     return questionBank[Random().nextInt(questionBank.length)];
   }

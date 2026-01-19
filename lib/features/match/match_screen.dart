@@ -20,24 +20,34 @@ class MatchScreen extends StatefulWidget {
 }
 
 class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin {
-  // ... (Controller sama seperti sebelumnya) ...
   late AnimationController _radarController;
   late AnimationController _shakeController;
+  late AnimationController _feedbackController;
+  late Animation<double> _feedbackScale;
 
   final MatchService _matchService = MatchService();
   final FirestoreService _firestoreService = FirestoreService();
   final String uid = FirebaseAuth.instance.currentUser!.uid;
 
+  // --- STATE ---
   String? _activeMatchId;
   bool _isSearching = false;
   Map<String, dynamic>? _foundOpponentData;
   int _startCount = 3;
   StreamSubscription? _matchSubscription;
 
+  // --- GAME STATE ---
   int _timeLeft = 10;
   Timer? _gameTimer;
   Timer? _heartbeatTimer;
   bool _hasAnswered = false;
+  
+  // Feedback Visual State
+  bool _showFeedback = false;
+  String _feedbackText = "";
+  Color _feedbackColor = Colors.white;
+  bool _isHostProcessing = false;
+
   int _startTime = 0;
   int _lastProcessedRound = 0; 
 
@@ -46,12 +56,16 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
     super.initState();
     _radarController = AnimationController(vsync: this, duration: const Duration(seconds: 2));
     _shakeController = AnimationController(vsync: this, duration: const Duration(milliseconds: 500));
+    // Animasi feedback sangat cepat (200ms) agar terasa responsif
+    _feedbackController = AnimationController(vsync: this, duration: const Duration(milliseconds: 200));
+    _feedbackScale = CurvedAnimation(parent: _feedbackController, curve: Curves.elasticOut);
   }
 
   @override
   void dispose() {
     _radarController.dispose();
     _shakeController.dispose();
+    _feedbackController.dispose();
     _gameTimer?.cancel();
     _heartbeatTimer?.cancel();
     _matchSubscription?.cancel();
@@ -70,6 +84,8 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
         _lastProcessedRound = 0;
         _startCount = 3;
         _hasAnswered = false;
+        _showFeedback = false;
+        _isHostProcessing = false;
         _timeLeft = 10;
       });
     }
@@ -78,10 +94,9 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
     _matchSubscription?.cancel(); 
   }
 
-  // --- LOGIKA MATCHMAKING SAMA PERSIS SEPERTI SEBELUMNYA (Copy Paste) ---
-  // Agar hemat tempat, pastikan fungsi _startMatchmaking, _listenForQueueMatch, _handleMatchFound
-  // MENGGUNAKAN LOGIKA DARI JAWABAN SAYA YANG TERAKHIR (yang ada validasi Index).
-  // Saya tulis ulang _startMatchmaking agar aman.
+  // ===========================================================================
+  // LOGIKA MATCHMAKING
+  // ===========================================================================
 
   void _startMatchmaking() async {
     _cleanupMatch();
@@ -157,8 +172,53 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
   }
 
   // ===========================================================================
-  // UI ARENA (UPDATED: LOGIKA KIRI = KITA)
+  // UI ARENA & FEEDBACK (DIPERCEPAT)
   // ===========================================================================
+
+  void _calculateLocalFeedback(MatchModel match, bool amIP1) {
+    if (match.currentQuestion == null) return;
+    
+    String correctAnswer = match.currentQuestion!['correctAnswer'];
+    
+    String? myAns = amIP1 ? match.p1Answer : match.p2Answer;
+    String? oppAns = amIP1 ? match.p2Answer : match.p1Answer;
+    
+    int tMy = (amIP1 ? match.p1Time : match.p2Time) ?? 99999999;
+    int tOpp = (amIP1 ? match.p2Time : match.p1Time) ?? 99999999;
+
+    String text = "";
+    Color color = Colors.white;
+
+    bool iCorrect = myAns == correctAnswer;
+    bool oppCorrect = oppAns == correctAnswer;
+
+    if (!iCorrect) {
+      text = "JAWABAN SALAH!";
+      color = Colors.redAccent;
+    } else if (!oppCorrect) {
+      text = "MUSUH SALAH!\nKAMU MENANG!";
+      color = Colors.greenAccent;
+    } else {
+      if (tMy < tOpp) {
+        text = "KAMU LEBIH CEPAT!";
+        color = Colors.cyanAccent;
+      } else if (tMy > tOpp) {
+        text = "MUSUH LEBIH CEPAT!";
+        color = Colors.orangeAccent;
+      } else {
+        text = "SERI!";
+        color = Colors.white;
+      }
+    }
+
+    setState(() {
+      _feedbackText = text;
+      _feedbackColor = color;
+      _showFeedback = true;
+    });
+    _feedbackController.forward(from: 0.0);
+    HapticFeedback.mediumImpact();
+  }
 
   Widget _buildActiveMatchUI() {
     return StreamBuilder<MatchModel>(
@@ -168,34 +228,61 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
         
         MatchModel match = snapshot.data!;
         
-        // --- LOGIKA POSISI (KEY CHANGE) ---
-        bool amIP1 = match.player1Uid == uid; // Cek apakah saya Player 1
-
-        // Tentukan data Saya (Left) vs Lawan (Right)
+        bool amIP1 = match.player1Uid == uid;
         String myName = amIP1 ? match.player1Name : match.player2Name;
         int myHp = amIP1 ? match.p1Health : match.p2Health;
-        String myAvatar = amIP1 ? match.p1Avatar : match.p2Avatar; // Avatar Saya
-
+        String myAvatar = amIP1 ? match.p1Avatar : match.p2Avatar; 
         String oppName = amIP1 ? match.player2Name : match.player1Name;
         int oppHp = amIP1 ? match.p2Health : match.p1Health;
-        String oppAvatar = amIP1 ? match.p2Avatar : match.p1Avatar; // Avatar Lawan
+        String oppAvatar = amIP1 ? match.p2Avatar : match.p1Avatar;
 
-        // Game Over & Round Logic
         if (match.status == 'finished') {
           if (amIP1) _matchService.finalizeMatchStats(match);
           return _buildGameOverScreen(match, amIP1);
         }
 
+        // RESET RONDE (Dipanggil saat stream mendeteksi round naik)
         if (match.currentRound > _lastProcessedRound) {
-          _lastProcessedRound = match.currentRound;
-          _hasAnswered = false;
-          _timeLeft = 10;
-          _startTime = DateTime.now().millisecondsSinceEpoch;
-          _startRoundTimer();
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              setState(() {
+                _lastProcessedRound = match.currentRound;
+                _hasAnswered = false;
+                _showFeedback = false;
+                _isHostProcessing = false;
+                _timeLeft = 10;
+                _startTime = DateTime.now().millisecondsSinceEpoch;
+              });
+              _startRoundTimer();
+            }
+          });
         }
 
-        if (amIP1 && match.p1Answer != null && match.p2Answer != null) {
-          _matchService.processRoundResult(match);
+        // LOGIKA SAAT KEDUANYA SUDAH MENJAWAB
+        if (match.p1Answer != null && match.p2Answer != null) {
+          
+          // 1. Tampilkan Feedback Visual
+          if (!_showFeedback) {
+             WidgetsBinding.instance.addPostFrameCallback((_) {
+               if (mounted) _calculateLocalFeedback(match, amIP1);
+             });
+          }
+
+          // 2. Host Memproses Hasil ke Database
+          if (amIP1 && !_isHostProcessing) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) setState(() => _isHostProcessing = true);
+              
+              // [KUNCI KECEPATAN]: Delay hanya 300ms (sangat singkat)
+              // Logikanya: Kita tampilkan hasil, dan hampir bersamaan
+              // kita suruh server ganti ronde. Server butuh waktu ~1 detik.
+              // Jadi total user melihat hasil adalah 0.3s (delay) + 1s (server) = 1.3 detik.
+              // Ini terasa jauuuuh lebih cepat.
+              Future.delayed(const Duration(milliseconds: 300), () {
+                 if (mounted) _matchService.processRoundResult(match);
+              });
+            });
+          }
         }
 
         return Scaffold(
@@ -204,25 +291,59 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
               gradient: LinearGradient(colors: [Color(0xFF050010), Color(0xFF1A0038)], begin: Alignment.topCenter, end: Alignment.bottomCenter)
             ),
             child: SafeArea(
-              child: Column(
+              child: Stack(
                 children: [
-                  // Kirim data yang sudah di-swap ke Header
-                  _buildBattleHeader(myName, myHp, oppName, oppHp, amIP1, match.currentRound, match.matchId),
-                  
-                  Expanded(
-                    child: Row(
-                      children: [
-                        // KIRI: Selalu Avatar SAYA (autoRotate false)
-                        Expanded(flex: 2, child: _build3DModel(myAvatar, autoRotate: false)),
-                        
-                        // TENGAH: Soal
-                        Expanded(flex: 5, child: _buildQuestionArena(match, amIP1)),
-                        
-                        // KANAN: Selalu Avatar LAWAN
-                        Expanded(flex: 2, child: _build3DModel(oppAvatar, autoRotate: false)),
-                      ],
-                    ),
+                  Column(
+                    children: [
+                      _buildBattleHeader(myName, myHp, oppName, oppHp, amIP1, match.currentRound, match.matchId),
+                      Expanded(
+                        child: Row(
+                          children: [
+                            Expanded(flex: 2, child: _build3DModel(myAvatar, autoRotate: false)),
+                            Expanded(flex: 5, child: _buildQuestionArena(match, amIP1)),
+                            Expanded(flex: 2, child: _build3DModel(oppAvatar, autoRotate: false)),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
+
+                  // Feedback Visual di tengah layar
+                  if (_showFeedback)
+                    Center(
+                      child: ScaleTransition(
+                        scale: _feedbackScale,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.9),
+                            borderRadius: BorderRadius.circular(15),
+                            border: Border.all(color: _feedbackColor, width: 3),
+                            boxShadow: [BoxShadow(color: _feedbackColor.withOpacity(0.6), blurRadius: 30, spreadRadius: 5)]
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                _feedbackText.contains("SALAH") ? Icons.cancel : Icons.check_circle,
+                                color: _feedbackColor,
+                                size: 60,
+                              ),
+                              const SizedBox(height: 10),
+                              Text(
+                                _feedbackText,
+                                textAlign: TextAlign.center,
+                                style: GoogleFonts.blackOpsOne(
+                                  color: _feedbackColor,
+                                  fontSize: 24,
+                                  shadows: [Shadow(color: _feedbackColor, blurRadius: 10)]
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -242,18 +363,15 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
     });
   }
 
-  // --- WIDGETS UPDATED ---
+  // --- WIDGETS ---
 
-  // Header menerima Nama & HP yang sudah diurutkan (Kiri=Kita, Kanan=Musuh)
   Widget _buildBattleHeader(String myName, int myHp, String oppName, int oppHp, bool amIP1, int round, String matchId) {
     return Padding(
       padding: const EdgeInsets.all(20),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // KIRI (Kita) - Cyan
           _statHealth(myName, myHp, Colors.cyanAccent),
-          
           Column(
             children: [
               Text("ROUND $round", style: GoogleFonts.orbitron(color: Colors.amber, fontSize: 12, fontWeight: FontWeight.bold)),
@@ -269,8 +387,6 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
               )
             ],
           ),
-          
-          // KANAN (Lawan) - Red
           _statHealth(oppName, oppHp, Colors.redAccent, isRight: true),
         ],
       ),
@@ -311,7 +427,7 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
           child: Stack(
             children: [
               AnimatedContainer(
-                duration: const Duration(milliseconds: 500),
+                duration: const Duration(milliseconds: 300), // Animasi HP lebih cepat juga
                 curve: Curves.easeOut,
                 width: 138 * (max(0, hp) / 100),
                 height: 12,
@@ -326,10 +442,9 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
     );
   }
 
-  // Widget 3D Model sekarang menerima String path (bukan boolean)
   Widget _build3DModel(String assetPath, {bool autoRotate = true}) {
     return ModelViewer(
-      src: assetPath, // Gunakan path dinamis dari database
+      src: assetPath,
       autoRotate: autoRotate,
       cameraControls: false,
       backgroundColor: Colors.transparent,
@@ -337,10 +452,27 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
     );
   }
 
-  // --- SISA KODE (QuestionArena, GameOver, Lobby) SAMA SEPERTI SEBELUMNYA ---
-  // (Pastikan fungsi _buildQuestionArena, _buildGameOverScreen, build, dll tetap ada)
-  
   Widget _buildQuestionArena(MatchModel match, bool isP1) {
+    if (_showFeedback) return Container(); 
+
+    if (_hasAnswered) {
+      return Container(
+        margin: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(30),
+        decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(40), border: Border.all(color: Colors.cyanAccent.withOpacity(0.3))),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.cyanAccent, strokeWidth: 2)),
+              const SizedBox(height: 20),
+              Text("MENUNGGU LAWAN...", textAlign: TextAlign.center, style: GoogleFonts.orbitron(color: Colors.cyanAccent, fontSize: 14, letterSpacing: 2)),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Container(
       margin: const EdgeInsets.all(20),
       padding: const EdgeInsets.all(30),
@@ -349,7 +481,7 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
         children: [
           Expanded(child: Center(child: Text(match.currentQuestion?['question'] ?? "...", textAlign: TextAlign.center, style: GoogleFonts.poppins(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600)))),
           const SizedBox(height: 20),
-          if (!_hasAnswered && match.currentQuestion != null)
+          if (match.currentQuestion != null)
             GridView.builder(
               shrinkWrap: true,
               itemCount: 4,
@@ -382,7 +514,6 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
     if (match.p1Health == match.p2Health) {
       if (isP1 && match.p1Score > match.p2Score) iWin = true;
       if (!isP1 && match.p2Score > match.p1Score) iWin = true;
-      if (isP1 && match.p1Score == match.p2Score) iWin = true;
     }
 
     return Scaffold(
@@ -420,7 +551,6 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
           if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
           UserModel myUser = snapshot.data!;
 
-          // LOGIKA AVATAR DI LOBBY (Sesuai item yang dipakai)
           String myAvatarPath = 'assets/models/avatar_default.glb';
           if (myUser.equippedLoadout['body'] == 'monster') myAvatarPath = 'assets/models/monster.glb';
           if (myUser.equippedLoadout['body'] == 'teacher') myAvatarPath = 'assets/models/teacher.glb';
@@ -442,10 +572,8 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
                     const Spacer(),
                     Row(
                       children: [
-                        // Avatar Saya di Lobby (Pakai path dinamis)
                         Expanded(flex: 3, child: _buildAvatarSlot("KAMU", true, avatarPath: myAvatarPath)),
                         Expanded(flex: 2, child: _buildMatchCenter()),
-                        // Avatar Lawan di Lobby (Hanya bayangan/tanda tanya sampai ketemu)
                         Expanded(flex: 3, child: _buildAvatarSlot(_foundOpponentData?['name'] ?? "MENCARI...", false, isFound: _foundOpponentData != null)),
                       ],
                     ),
