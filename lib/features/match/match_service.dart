@@ -3,15 +3,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:math'; 
 import '../../models/match_model.dart';
 import '../../models/user_model.dart';
+import '../../core/constants/question_data.dart'; // Pastikan import ini ada
 
 class MatchService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  // ... (KODE FIND MATCH & GAMEPLAY TETAP SAMA SEPERTI SEBELUMNYA) ...
-  // Langsung scroll ke bagian paling bawah untuk update syncUserStats
-
   // ===========================================================================
-  // 1. MATCHMAKING SYSTEM (FAIL-SAFE)
+  // 1. MATCHMAKING SYSTEM
   // ===========================================================================
   
   Future<String> findMatch(UserModel user) async {
@@ -62,6 +60,9 @@ class MatchService {
             try { oppAvatar = freshOpponent['avatarPath'] ?? 'assets/models/avatar_default.glb'; } catch (_) {}
             String myAvatar = _getAvatarPath(user.equippedLoadout['body']);
 
+            // Ambil soal unik pertama
+            Map<String, dynamic> firstQResult = _getUniqueRandomQuestion([]); 
+            
             MatchModel newMatch = MatchModel(
               matchId: matchId,
               player1Uid: freshOpponent['uid'],
@@ -75,7 +76,8 @@ class MatchService {
               status: 'playing',      
               currentRound: 1,
               p1Health: 100, p2Health: 100, p1Score: 0, p2Score: 0,
-              currentQuestion: _getRandomQuestion(), 
+              currentQuestion: firstQResult['question'],
+              usedQuestionIndices: [firstQResult['index']],
             );
 
             transaction.delete(freshOpponent.reference);
@@ -110,6 +112,10 @@ class MatchService {
     try { await _db.collection('match_queue').doc(uid).update({'lastSeen': FieldValue.serverTimestamp()}); } catch (e) {}
   }
   
+  // ===========================================================================
+  // 2. GAMEPLAY LOGIC
+  // ===========================================================================
+
   Future<void> submitAnswer(String matchId, String uid, String answer, int timeTaken, bool isPlayer1) async {
     await _db.collection('matches').doc(matchId).update({
       isPlayer1 ? 'p1Answer' : 'p2Answer': answer,
@@ -147,7 +153,17 @@ class MatchService {
       p1NewHealth -= damageBothWrong; p2NewHealth -= damageBothWrong;
     }
 
-    bool isGameOver = p1NewHealth <= 0 || p2NewHealth <= 0 || match.currentRound >= 5;
+    bool isGameOver = p1NewHealth <= 0 || p2NewHealth <= 0 || match.currentRound >= 10;
+
+    // Siapkan soal berikutnya jika belum Game Over
+    Map<String, dynamic>? nextQuestion;
+    List<int> nextUsedIndices = List.from(match.usedQuestionIndices);
+
+    if (!isGameOver) {
+      var res = _getUniqueRandomQuestion(nextUsedIndices);
+      nextQuestion = res['question'];
+      nextUsedIndices.add(res['index']);
+    }
 
     await _db.collection('matches').doc(match.matchId).update({
       'p1Health': max(0, p1NewHealth),
@@ -157,9 +173,32 @@ class MatchService {
       'p1Answer': null, 'p2Answer': null, 'p1Time': null, 'p2Time': null,
       'currentRound': isGameOver ? match.currentRound : match.currentRound + 1,
       'status': isGameOver ? 'finished' : 'playing',
-      'currentQuestion': isGameOver ? null : _getRandomQuestion(),
+      'currentQuestion': nextQuestion,
+      'usedQuestionIndices': nextUsedIndices,
     });
   }
+
+  // --- LOGIKA SOAL UNIK ---
+  Map<String, dynamic> _getUniqueRandomQuestion(List<int> usedIndices) {
+    List<int> availableIndices = [];
+    for (int i = 0; i < QuestionData.questions.length; i++) {
+      if (!usedIndices.contains(i)) {
+        availableIndices.add(i);
+      }
+    }
+
+    if (availableIndices.isEmpty) {
+      int randomIndex = Random().nextInt(QuestionData.questions.length);
+      return {'question': QuestionData.questions[randomIndex], 'index': randomIndex};
+    }
+
+    int selectedIndex = availableIndices[Random().nextInt(availableIndices.length)];
+    return {'question': QuestionData.questions[selectedIndex], 'index': selectedIndex};
+  }
+
+  // ===========================================================================
+  // 3. STATS & SYNC
+  // ===========================================================================
 
   Future<void> finalizeMatchStats(MatchModel match) async {
     final matchRef = _db.collection('matches').doc(match.matchId);
@@ -190,7 +229,7 @@ class MatchService {
 
   Stream<MatchModel> getMatchStream(String matchId) {
     return _db.collection('matches').doc(matchId).snapshots().map((doc) {
-      if (!doc.exists) throw Exception("Match doc missing");
+      if (!doc.exists) throw Exception("Match missing");
       return MatchModel.fromMap(doc.data() as Map<String, dynamic>);
     });
   }
@@ -206,73 +245,26 @@ class MatchService {
         });
   }
 
-  Map<String, dynamic> _getRandomQuestion() {
-    final List<Map<String, dynamic>> questionBank = [
-      {'question': 'I ___ a student.', 'options': ['Am', 'Is', 'Are', 'Be'], 'correctAnswer': 'Am'},
-      {'question': 'She ___ to school.', 'options': ['Go', 'Goes', 'Went', 'Gone'], 'correctAnswer': 'Goes'},
-      {'question': 'They ___ football.', 'options': ['Play', 'Played', 'Playing', 'Plays'], 'correctAnswer': 'Play'},
-      {'question': 'Antonym of "Big"', 'options': ['Huge', 'Large', 'Small', 'Giant'], 'correctAnswer': 'Small'},
-      {'question': 'Synonym of "Fast"', 'options': ['Slow', 'Quick', 'Late', 'Lazy'], 'correctAnswer': 'Quick'},
-    ];
-    return questionBank[Random().nextInt(questionBank.length)];
-  }
-
-  // ===========================================================================
-  // [FIX] SYNC USER STATS (DENGAN LOGGING)
-  // ===========================================================================
-  
   Future<void> syncUserStats(String uid) async {
     try {
-      print("SYNC: Memulai sinkronisasi stats untuk $uid");
-      
-      int wins = 0;
-      int losses = 0;
-
-      // Ambil match sebagai P1
-      var q1 = await _db.collection('matches')
-          .where('player1Uid', isEqualTo: uid)
-          .where('status', isEqualTo: 'finished')
-          .get();
-
-      // Ambil match sebagai P2
-      var q2 = await _db.collection('matches')
-          .where('player2Uid', isEqualTo: uid)
-          .where('status', isEqualTo: 'finished')
-          .get();
-
+      int wins = 0; int losses = 0;
+      var q1 = await _db.collection('matches').where('player1Uid', isEqualTo: uid).where('status', isEqualTo: 'finished').get();
+      var q2 = await _db.collection('matches').where('player2Uid', isEqualTo: uid).where('status', isEqualTo: 'finished').get();
       List<DocumentSnapshot> allDocs = [...q1.docs, ...q2.docs];
-      print("SYNC: Ditemukan ${allDocs.length} riwayat pertandingan.");
 
       for (var doc in allDocs) {
         var data = doc.data() as Map<String, dynamic>;
-        
-        int hp1 = data['p1Health'] ?? 0;
-        int hp2 = data['p2Health'] ?? 0;
-        int s1 = data['p1Score'] ?? 0;
-        int s2 = data['p2Score'] ?? 0;
-
+        int hp1 = data['p1Health'] ?? 0; int hp2 = data['p2Health'] ?? 0;
+        int s1 = data['p1Score'] ?? 0; int s2 = data['p2Score'] ?? 0;
         bool isP1 = (data['player1Uid'] == uid);
         bool userWon = false;
-
-        // Logika Pemenang
         if (hp1 > hp2) userWon = isP1;
         else if (hp2 > hp1) userWon = !isP1;
         else if (s1 > s2) userWon = isP1;
         else userWon = !isP1; 
-
         if (userWon) wins++; else losses++;
       }
-
-      print("SYNC RESULT: Wins=$wins, Losses=$losses");
-
-      // Update Paksa ke Database User
-      await _db.collection('users').doc(uid).update({
-        'winCount': wins,
-        'lossCount': losses,
-      });
-      
-    } catch (e) {
-      print("SYNC ERROR: $e");
-    }
+      await _db.collection('users').doc(uid).update({'winCount': wins, 'lossCount': losses});
+    } catch (e) { print("Sync Error: $e"); }
   }
 }

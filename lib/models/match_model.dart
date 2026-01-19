@@ -7,7 +7,7 @@ class MatchModel {
   final String p1PhotoUrl;
   final String p2PhotoUrl;
   
-  // [BARU] Avatar Path (URL/Asset path)
+  // Avatar 3D
   final String p1Avatar; 
   final String p2Avatar;
 
@@ -21,6 +21,9 @@ class MatchModel {
   
   final Map<String, dynamic>? currentQuestion;
   
+  // [WAJIB] List index soal yang sudah dipakai (Agar soal tidak berulang)
+  final List<int> usedQuestionIndices; 
+
   // Gameplay Data
   final String? p1Answer;
   final String? p2Answer;
@@ -35,7 +38,6 @@ class MatchModel {
     required this.player2Name,
     required this.p1PhotoUrl,
     required this.p2PhotoUrl,
-    // [BARU] Default ke avatar default jika null
     this.p1Avatar = 'assets/models/avatar_default.glb', 
     this.p2Avatar = 'assets/models/avatar_default.glb',
     required this.status,
@@ -45,6 +47,8 @@ class MatchModel {
     required this.p1Score,
     required this.p2Score,
     this.currentQuestion,
+    // [WAJIB] Default list kosong
+    this.usedQuestionIndices = const [], 
     this.p1Answer,
     this.p2Answer,
     this.p1Time,
@@ -60,7 +64,6 @@ class MatchModel {
       'player2Name': player2Name,
       'p1PhotoUrl': p1PhotoUrl,
       'p2PhotoUrl': p2PhotoUrl,
-      // [BARU]
       'p1Avatar': p1Avatar,
       'p2Avatar': p2Avatar,
       'status': status,
@@ -70,6 +73,8 @@ class MatchModel {
       'p1Score': p1Score,
       'p2Score': p2Score,
       'currentQuestion': currentQuestion,
+      // [WAJIB] Simpan ke DB
+      'usedQuestionIndices': usedQuestionIndices, 
       'p1Answer': p1Answer,
       'p2Answer': p2Answer,
       'p1Time': p1Time,
@@ -86,7 +91,6 @@ class MatchModel {
       player2Name: map['player2Name'] ?? 'Unknown',
       p1PhotoUrl: map['p1PhotoUrl'] ?? '',
       p2PhotoUrl: map['p2PhotoUrl'] ?? '',
-      // [BARU] Ambil data avatar
       p1Avatar: map['p1Avatar'] ?? 'assets/models/avatar_default.glb',
       p2Avatar: map['p2Avatar'] ?? 'assets/models/avatar_default.glb',
       status: map['status'] ?? 'playing',
@@ -96,6 +100,8 @@ class MatchModel {
       p1Score: map['p1Score'] ?? 0,
       p2Score: map['p2Score'] ?? 0,
       currentQuestion: map['currentQuestion'],
+      // [WAJIB] Baca dari DB (List dynamic -> List int)
+      usedQuestionIndices: List<int>.from(map['usedQuestionIndices'] ?? []), 
       p1Answer: map['p1Answer'],
       p2Answer: map['p2Answer'],
       p1Time: map['p1Time'],
