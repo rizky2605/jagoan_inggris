@@ -81,7 +81,7 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
   }
 
   // ===========================================================================
-  // MATCHMAKING LOGIC (FINAL & STABLE)
+  // MATCHMAKING LOGIC
   // ===========================================================================
 
   void _startMatchmaking() async {
@@ -89,7 +89,6 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
     setState(() => _isSearching = true);
     _radarController.repeat();
     
-    // Heartbeat Loop
     _heartbeatTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
       if (!mounted || !_isSearching || _foundOpponentData != null) {
         timer.cancel();
@@ -100,7 +99,7 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
 
     try {
       DocumentSnapshot userDoc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
-      if (!userDoc.exists) throw Exception("User data missing");
+      if (!userDoc.exists) throw Exception("User missing");
       UserModel user = UserModel.fromMap(userDoc.data() as Map<String, dynamic>, uid);
       
       String result = await _matchService.findMatch(user);
@@ -108,27 +107,17 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
       if (!mounted || !_isSearching) return; 
 
       if (result == "WAITING") {
-        debugPrint("Masuk Queue, Menunggu lawan...");
+        debugPrint("Masuk Queue...");
         _listenForQueueMatch(uid);
       } else if (result.isNotEmpty) {
-        debugPrint("Match ditemukan: $result");
+        debugPrint("Match ditemukan!");
         _handleMatchFound(result, user.uid);
       } else {
-        // [MODIFIKASI] Jika error (result kosong), jangan tutup UI.
-        // Beri tahu user, tapi biarkan mereka tetap di layar 'Mencari'
-        // agar heartbeat tetap jalan dan mereka tetap terdaftar di queue.
-        debugPrint("Warning: Find Match returned empty. Staying in Queue.");
-        _listenForQueueMatch(uid); // Fallback: Dengarkan saja kalau ada yg ambil
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Gagal mencari (Network/Index)."), backgroundColor: Colors.red));
+        // Jangan _cleanupMatch di sini agar user bisa coba lagi atau cancel manual
       }
     } catch (e) {
       debugPrint("UI Error: $e");
-      if (mounted && _isSearching) {
-        // Jangan tampilkan snackbar merah yang mengganggu, cukup log saja
-        // Kecuali error fatal
-        if (e.toString().contains("INDEX")) {
-           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Index Error. Cek Console."), backgroundColor: Colors.red));
-        }
-      }
     }
   }
 
@@ -140,15 +129,12 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
         .where('player1Uid', isEqualTo: myUid)
         .where('status', isEqualTo: 'playing')
         .snapshots()
-        .listen(
-      (snapshot) {
-        if (snapshot.docs.isNotEmpty && mounted && _isSearching && _activeMatchId == null) {
-          _matchSubscription?.cancel();
-          _handleMatchFound(snapshot.docs.first.id, myUid);
-        }
-      },
-      onError: (e) => debugPrint("Listener Error: $e"),
-    );
+        .listen((snapshot) {
+      if (snapshot.docs.isNotEmpty && mounted && _isSearching && _activeMatchId == null) {
+        _matchSubscription?.cancel();
+        _handleMatchFound(snapshot.docs.first.id, myUid);
+      }
+    }, onError: (e) => debugPrint("Listener Error: $e"));
   }
 
   void _handleMatchFound(String matchId, String myUid) async {
@@ -185,13 +171,16 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
     }
   }
 
-  // ... (SISA KODE UI SAMA PERSIS)
-  
+  // ===========================================================================
+  // GAMEPLAY UI
+  // ===========================================================================
+
   Widget _buildActiveMatchUI() {
     return StreamBuilder<MatchModel>(
       stream: _matchService.getMatchStream(_activeMatchId!),
       builder: (context, snapshot) {
         if (!snapshot.hasData) return const Scaffold(backgroundColor: Colors.black, body: Center(child: CircularProgressIndicator()));
+        
         MatchModel match = snapshot.data!;
         bool isP1 = match.player1Uid == uid;
 
@@ -244,10 +233,18 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
     _gameTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted) return;
       setState(() {
-        if (_timeLeft > 0) _timeLeft--; else timer.cancel();
+        if (_timeLeft > 0) {
+          _timeLeft--;
+        } else {
+          timer.cancel();
+        }
       });
     });
   }
+
+  // ===========================================================================
+  // WIDGETS (VISUAL FIXED)
+  // ===========================================================================
 
   Widget _buildBattleHeader(MatchModel match, bool isP1) {
     return Padding(
@@ -299,21 +296,41 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
     }
   }
 
+  // [VISUAL FIX] Health Bar sekarang punya background abu-abu
   Widget _statHealth(String name, int hp, Color color, {bool isRight = false}) {
     return Column(
       crossAxisAlignment: isRight ? CrossAxisAlignment.end : CrossAxisAlignment.start,
       children: [
         Text(name.toUpperCase(), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10)),
         const SizedBox(height: 6),
+        // Wadah Abu-abu (Background)
         Container(
-          width: 140, height: 10,
-          decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(10)),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 500),
-            width: 140 * (max(0, hp) / 100),
-            decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(10), boxShadow: [BoxShadow(color: color.withOpacity(0.5), blurRadius: 10)]),
+          width: 140, 
+          height: 12,
+          decoration: BoxDecoration(
+            color: Colors.grey[800], // Warna gelap agar kontras
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.white24, width: 1)
+          ),
+          // Stack untuk menumpuk Bar di atas Background
+          child: Stack(
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 500),
+                curve: Curves.easeOut,
+                width: 138 * (max(0, hp) / 100), // Perhitungan width presisi
+                height: 12,
+                decoration: BoxDecoration(
+                  color: hp < 30 ? Colors.red : color, // Merah jika kritis
+                  borderRadius: BorderRadius.circular(10),
+                  boxShadow: [BoxShadow(color: color.withOpacity(0.5), blurRadius: 5)]
+                ),
+              ),
+            ],
           ),
         ),
+        const SizedBox(height: 4),
+        Text("$hp/100", style: const TextStyle(color: Colors.white54, fontSize: 8)),
       ],
     );
   }
@@ -353,6 +370,7 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
     );
   }
 
+  // [MMR FIX] Teks disesuaikan dengan logika Service (+25 / -15)
   Widget _buildGameOverScreen(MatchModel match, bool isP1) {
     bool iWin = false;
     if (isP1 && match.p1Health > match.p2Health) iWin = true;
@@ -373,7 +391,8 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
             const SizedBox(height: 20),
             Text(iWin ? "VICTORY" : "DEFEAT", style: GoogleFonts.orbitron(color: Colors.white, fontSize: 50, fontWeight: FontWeight.w900)),
             const SizedBox(height: 10),
-            Text(iWin ? "+20 MMR" : "-10 MMR", style: TextStyle(color: iWin ? Colors.green : Colors.red, fontSize: 20, fontWeight: FontWeight.bold)),
+            // Update teks sesuai logic Service
+            Text(iWin ? "+25 MMR" : "-15 MMR", style: TextStyle(color: iWin ? Colors.green : Colors.red, fontSize: 20, fontWeight: FontWeight.bold)),
             const SizedBox(height: 50),
             ElevatedButton(
               onPressed: _cleanupMatch, 

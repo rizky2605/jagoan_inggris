@@ -8,13 +8,12 @@ class MatchService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
   // ===========================================================================
-  // 1. MATCHMAKING SYSTEM (LOGIKA AMAN & SEDERHANA)
+  // 1. MATCHMAKING SYSTEM (FIFO - ROBUST)
   // ===========================================================================
   
   Future<String> findMatch(UserModel user) async {
     try {
-      // TAHAP 1: Masukkan diri ke antrean (Status: searching)
-      // Gunakan set() dengan merge agar tidak menimpa data penting lain
+      // 1. Daftar Antrean
       await _db.collection('match_queue').doc(user.uid).set({
         'uid': user.uid,
         'username': user.username,
@@ -25,56 +24,40 @@ class MatchService {
         'lastSeen': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
-      // TAHAP 2: Query Sederhana (Hanya butuh Index: status + timestamp)
-      // Kita ambil 10 orang teratas, nanti kita filter manual mana yang aktif.
+      // 2. Query Lawan (FIFO)
       QuerySnapshot queueSnapshot = await _db.collection('match_queue')
           .where('status', isEqualTo: 'searching')
-          .orderBy('timestamp', descending: false) // FIFO (Siapa cepat dia dapat)
+          .orderBy('timestamp', descending: false) 
           .limit(10)
           .get();
 
       DocumentSnapshot? opponentDoc;
-      // Batas waktu aktif 30 detik (User dianggap offline jika > 30 detik tidak update)
       DateTime threshold = DateTime.now().subtract(const Duration(seconds: 30));
 
-      // TAHAP 3: Filter Manual (Di sisi Aplikasi, bukan Database)
       for (var doc in queueSnapshot.docs) {
-        // Jangan lawan diri sendiri
         if (doc['uid'] == user.uid) continue;
 
-        // Cek apakah lawan masih aktif (lastSeen)
-        // Kita lakukan di sini agar tidak butuh Index 'lastSeen' yang rumit
+        // Filter manual lastSeen
         if (doc.data() != null && (doc.data() as Map).containsKey('lastSeen')) {
           Timestamp? ts = doc['lastSeen'];
-          if (ts != null) {
-            DateTime lastSeenDate = ts.toDate();
-            if (lastSeenDate.isBefore(threshold)) {
-              // Lawan sudah offline lama (Hantu), skip saja (nanti bisa dihapus worker)
-              continue; 
-            }
-          }
+          if (ts != null && ts.toDate().isBefore(threshold)) continue; 
         }
 
-        // Ketemu lawan valid!
         opponentDoc = doc;
         break; 
       }
 
-      // TAHAP 4: Transaksi Kunci (Locking)
       if (opponentDoc != null) {
         return await _db.runTransaction((transaction) async {
-          // Cek lagi apakah lawan masih ada di DB
           DocumentSnapshot freshOpponent = await transaction.get(opponentDoc!.reference);
-          if (!freshOpponent.exists) {
-            throw Exception("Lawan sudah diambil orang lain.");
-          }
+          if (!freshOpponent.exists) throw Exception("Lawan hilang.");
 
           String matchId = _db.collection('matches').doc().id; 
           
           MatchModel newMatch = MatchModel(
             matchId: matchId,
-            player1Uid: freshOpponent['uid'], // Lawan jadi Host
-            player2Uid: user.uid,             // Kita jadi Tamu
+            player1Uid: freshOpponent['uid'],
+            player2Uid: user.uid,
             player1Name: freshOpponent['username'],
             player2Name: user.username,
             p1PhotoUrl: freshOpponent['photoUrl'] ?? '', 
@@ -88,7 +71,6 @@ class MatchService {
             currentQuestion: _getRandomQuestion(), 
           );
 
-          // Hapus antrean keduanya -> Buat Match
           transaction.delete(freshOpponent.reference);
           transaction.delete(_db.collection('match_queue').doc(user.uid));
           transaction.set(_db.collection('matches').doc(matchId), newMatch.toMap());
@@ -96,14 +78,11 @@ class MatchService {
           return matchId;
         });
       } else {
-        // Tidak ada lawan -> Kita tunggu (WAITING)
         return "WAITING"; 
       }
 
     } catch (e) {
       print("Matchmaking Error: $e");
-      // Jangan langsung cancelSearch agar tidak keluar dari UI, 
-      // tapi kembalikan error string kosong agar UI tahu ada masalah.
       return "";
     }
   }
@@ -124,7 +103,10 @@ class MatchService {
     } catch (e) {}
   }
 
-  // --- LOGIKA GAMEPLAY (Tidak Berubah) ---
+  // ===========================================================================
+  // 2. GAMEPLAY LOGIC (LOGIKA DARAH & SKOR)
+  // ===========================================================================
+  
   Future<void> submitAnswer(String matchId, String uid, String answer, int timeTaken, bool isPlayer1) async {
     await _db.collection('matches').doc(matchId).update({
       isPlayer1 ? 'p1Answer' : 'p2Answer': answer,
@@ -144,18 +126,45 @@ class MatchService {
     int p1NewScore = match.p1Score;
     int p2NewScore = match.p2Score;
 
+    // --- KONFIGURASI DAMAGE ---
+    const int damageWrong = 20;       // Salah = -20
+    const int damageSlow = 5;         // Benar tapi kalah cepat = -5
+    const int damageBothWrong = 10;   // Dua-duanya salah = -10
+    const int scoreWin = 20;
+
+    // 1. P1 Benar, P2 Salah
     if (p1Correct && !p2Correct) {
-      p2NewHealth -= 20; p1NewScore += 10;
-    } else if (!p1Correct && p2Correct) {
-      p1NewHealth -= 20; p2NewScore += 10;
-    } else if (p1Correct && p2Correct) {
-      if ((match.p1Time ?? 0) < (match.p2Time ?? 0)) {
-        p2NewHealth -= 10; p1NewScore += 15;
+      p2NewHealth -= damageWrong;
+      p1NewScore += scoreWin;
+    } 
+    // 2. P1 Salah, P2 Benar
+    else if (!p1Correct && p2Correct) {
+      p1NewHealth -= damageWrong;
+      p2NewScore += scoreWin;
+    } 
+    // 3. Keduanya Benar (Adu Cepat)
+    else if (p1Correct && p2Correct) {
+      int t1 = match.p1Time ?? 999999;
+      int t2 = match.p2Time ?? 999999;
+
+      if (t1 < t2) { 
+        // P1 Lebih Cepat (P2 Kena damage dikit)
+        p2NewHealth -= damageSlow; 
+        p1NewScore += scoreWin;
+      } else if (t2 < t1) {
+        // P2 Lebih Cepat (P1 Kena damage dikit)
+        p1NewHealth -= damageSlow;
+        p2NewScore += scoreWin;
       } else {
-        p1NewHealth -= 10; p2NewScore += 15;
+        // Seri persis (Jarang)
+        p1NewScore += 10;
+        p2NewScore += 10;
       }
-    } else {
-      p1NewHealth -= 5; p2NewHealth -= 5; 
+    } 
+    // 4. Keduanya Salah
+    else {
+      p1NewHealth -= damageBothWrong;
+      p2NewHealth -= damageBothWrong;
     }
 
     bool isGameOver = p1NewHealth <= 0 || p2NewHealth <= 0 || match.currentRound >= 5;
@@ -175,6 +184,10 @@ class MatchService {
     });
   }
 
+  // ===========================================================================
+  // 3. FINALIZE STATS (SINKRONISASI MMR DISINI)
+  // ===========================================================================
+  
   Future<void> finalizeMatchStats(MatchModel match) async {
     final matchRef = _db.collection('matches').doc(match.matchId);
     final matchSnap = await matchRef.get();
@@ -184,6 +197,7 @@ class MatchService {
     String winnerUid;
     String loserUid;
 
+    // Logika Penentuan Pemenang (HP > Score > P2 Advantage)
     if (match.p1Health > match.p2Health) {
       winnerUid = match.player1Uid; loserUid = match.player2Uid;
     } else if (match.p2Health > match.p1Health) {
@@ -196,21 +210,24 @@ class MatchService {
 
     WriteBatch batch = _db.batch();
 
+    // [FIX] Update MMR (Harus sama dengan tampilan UI)
+    // WINNER: +25
     batch.update(_db.collection('users').doc(winnerUid), {
-      'mmr': FieldValue.increment(20),
+      'mmr': FieldValue.increment(25), 
       'winCount': FieldValue.increment(1),
-      'gold': FieldValue.increment(50), 
+      'gold': FieldValue.increment(100), 
     });
 
+    // LOSER: -15
     DocumentSnapshot loserSnap = await _db.collection('users').doc(loserUid).get();
     if (loserSnap.exists) {
        int currentMmr = (loserSnap.data() as Map<String, dynamic>)['mmr'] ?? 0;
-       int deduction = currentMmr >= 10 ? -10 : -currentMmr;
+       int deduction = currentMmr >= 15 ? -15 : -currentMmr; // Jangan sampai minus
 
        batch.update(_db.collection('users').doc(loserUid), {
          'mmr': FieldValue.increment(deduction),
          'lossCount': FieldValue.increment(1),
-         'gold': FieldValue.increment(10),
+         'gold': FieldValue.increment(20),
        });
     }
 
@@ -228,10 +245,10 @@ class MatchService {
   Map<String, dynamic> _getRandomQuestion() {
     final List<Map<String, dynamic>> questionBank = [
       {'question': 'I ___ a student.', 'options': ['Am', 'Is', 'Are', 'Be'], 'correctAnswer': 'Am'},
-      {'question': 'She ___ to school yesterday.', 'options': ['Go', 'Goes', 'Went', 'Gone'], 'correctAnswer': 'Went'},
-      {'question': 'Opposite of "Big" is ...', 'options': ['Large', 'Small', 'Huge', 'Giant'], 'correctAnswer': 'Small'},
-      {'question': 'Synonym of "Happy" is ...', 'options': ['Sad', 'Angry', 'Glad', 'Tired'], 'correctAnswer': 'Glad'},
-      {'question': 'We ___ Bali last year.', 'options': ['Visit', 'Visits', 'Visited', 'Visiting'], 'correctAnswer': 'Visited'},
+      {'question': 'She ___ to school.', 'options': ['Go', 'Goes', 'Went', 'Gone'], 'correctAnswer': 'Goes'},
+      {'question': 'They ___ football now.', 'options': ['Play', 'Played', 'Are playing', 'Is playing'], 'correctAnswer': 'Are playing'},
+      {'question': 'Opposite of "Happy"', 'options': ['Sad', 'Angry', 'Glad', 'Joy'], 'correctAnswer': 'Sad'},
+      {'question': 'We ___ busy yesterday.', 'options': ['Was', 'Were', 'Are', 'Is'], 'correctAnswer': 'Were'},
     ];
     return questionBank[Random().nextInt(questionBank.length)];
   }
