@@ -183,7 +183,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
                       // Skor Info Kecil
                       Align(
                         alignment: Alignment.center,
-                        child: Text("Skor Saat Ini: $_score", style: TextStyle(color: Colors.cyanAccent.withOpacity(0.7))),
+                        child: Text("Skor Saat Ini: $_score", style: const TextStyle(color: Color(0xB318FFFF))),
                       ),
                       
                       const SizedBox(height: 15),
@@ -193,9 +193,9 @@ class _ReviewScreenState extends State<ReviewScreen> {
                         width: double.infinity,
                         padding: const EdgeInsets.all(20),
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.05),
+                          color: const Color(0x0DFFFFFF),
                           borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: Colors.cyanAccent.withOpacity(0.3)),
+                          border: Border.all(color: const Color(0x4D18FFFF)),
                         ),
                         child: Text(
                           question.question,
@@ -215,18 +215,18 @@ class _ReviewScreenState extends State<ReviewScreen> {
                           itemBuilder: (context, index) {
                             final option = question.options[index];
                             
-                            Color btnColor = Colors.white.withOpacity(0.1);
+                            Color btnColor = const Color(0x1AFFFFFF);
                             Color borderColor = Colors.transparent;
                             
                             if (_isAnswered) {
                               if (option == correctAnswerText) {
-                                btnColor = Colors.green.withOpacity(0.2); 
+                                btnColor = const Color(0x334CAF50); 
                                 borderColor = Colors.greenAccent;
                               } else if (option == _selectedAnswer) {
-                                btnColor = Colors.red.withOpacity(0.2); 
+                                btnColor = const Color(0x33F44336); 
                                 borderColor = Colors.redAccent;
                               } else {
-                                btnColor = Colors.white.withOpacity(0.05);
+                                btnColor = const Color(0x0DFFFFFF);
                               }
                             } 
 

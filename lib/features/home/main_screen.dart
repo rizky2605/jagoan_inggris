@@ -1,10 +1,14 @@
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:ui'; // Untuk ImageFilter (Blur)
+
 import '../../models/user_model.dart';
 import '../story/story_screen.dart';
 import '../avatar/avatar_screen.dart';
 import '../match/match_screen.dart';
+import '../profile/profile_screen.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -14,8 +18,30 @@ class MainScreen extends StatefulWidget {
 }
 
 class _MainScreenState extends State<MainScreen> {
-  int _selectedIndex = 1;
+  int _selectedIndex = 1; // Default ke Story
   final String uid = FirebaseAuth.instance.currentUser!.uid;
+
+  @override
+  void initState() {
+    super.initState();
+    // Kunci Landscape & Immersive Mode
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  }
+
+  @override
+  void dispose() {
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    super.dispose();
+  }
 
   void _onItemTapped(int index) {
     setState(() {
@@ -23,95 +49,32 @@ class _MainScreenState extends State<MainScreen> {
     });
   }
 
-  // --- FUNGSI PENYELAMAT (SELF-HEALING) ---
-  // Jika profil macet/tidak ada, fungsi ini akan membuatnya manual
   Future<void> _forceCreateProfile() async {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
-        UserModel newUser = UserModel(
-          uid: uid,
-          username: user.email!.split('@')[0], // Pakai nama dari email
-          email: user.email!,
-          lastLogin: DateTime.now(),
-        );
-        
-        await FirebaseFirestore.instance
-            .collection('users')
-            .doc(uid)
-            .set(newUser.toMap());
-            
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Profil berhasil diperbaiki!"), backgroundColor: Colors.green),
-        );
+        UserModel newUser = UserModel(uid: uid, username: user.email!.split('@')[0], email: user.email!);
+        await FirebaseFirestore.instance.collection('users').doc(uid).set(newUser.toMap());
       }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Gagal: $e"), backgroundColor: Colors.red),
-      );
-    }
+    } catch (e) { debugPrint("Error: $e"); }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      // [FIX] Warna Background disamakan dengan Story Screen
+      backgroundColor: const Color(0xFF1E1E2C), 
       body: StreamBuilder<DocumentSnapshot>(
         stream: FirebaseFirestore.instance.collection('users').doc(uid).snapshots(),
         builder: (context, snapshot) {
-          // 1. LOADING STATE
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return _buildLoadingState("Menghubungkan ke server...");
-          }
-
-          // 2. ERROR STATE
-          if (snapshot.hasError) {
-            return Center(child: Text("Error: ${snapshot.error}", style: const TextStyle(color: Colors.red)));
-          }
-
-          // 3. DATA KOSONG (PENYEBAB FREEZE) -> TAMPILKAN TOMBOL PERBAIKI
-          if (!snapshot.hasData || !snapshot.data!.exists) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.warning_amber_rounded, size: 60, color: Colors.orange),
-                  const SizedBox(height: 16),
-                  const Text(
-                    "Profil belum siap.",
-                    style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    "Data database terlambat masuk.",
-                    style: TextStyle(color: Colors.white70),
-                  ),
-                  const SizedBox(height: 24),
-                  ElevatedButton.icon(
-                    onPressed: _forceCreateProfile, // Panggil fungsi penyelamat
-                    icon: const Icon(Icons.build),
-                    label: const Text("BUAT PROFIL SEKARANG"),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.cyanAccent,
-                      foregroundColor: Colors.black,
-                    ),
-                  )
-                ],
-              ),
-            );
-          }
-
-          // 4. DATA AMAN -> TAMPILKAN UI UTAMA
+          if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+          if (!snapshot.hasData || !snapshot.data!.exists) return _buildEmptyState();
+          
           UserModel user;
           try {
-            user = UserModel.fromMap(
-              snapshot.data!.data() as Map<String, dynamic>, 
-              uid
-            );
-          } catch (e) {
-            return Center(child: Text("Data Corrupt: $e", style: const TextStyle(color: Colors.red)));
-          }
+             user = UserModel.fromMap(snapshot.data!.data() as Map<String, dynamic>, uid);
+          } catch(e) { return const Center(child: Text("Data Error")); }
 
-          // List Halaman
           List<Widget> pages = [
             const AvatarScreen(),    
             StoryScreen(user: user), 
@@ -120,129 +83,249 @@ class _MainScreenState extends State<MainScreen> {
 
           return Stack(
             children: [
-              // Background
-              Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Color(0xFF0F0025), Color(0xFF200040)],
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
+              // 1. BACKGROUND GLOBAL (Sama dengan Story Screen)
+              Positioned.fill(
+                child: Container(
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Color(0xFF1E1E2C), Color(0xF20F0025)],
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                    ),
                   ),
                 ),
               ),
-              // Konten
-              SafeArea(
-                child: Column(
-                  children: [
-                    _buildProfileHeader(user),
-                    Expanded(child: pages[_selectedIndex]),
-                  ],
-                ),
+
+              // 2. LAYOUT UTAMA (ROW)
+              Row(
+                children: [
+                  // --- SIDEBAR KIRI (Transparan & Indikator) ---
+                  _buildRefinedSidebar(user),
+
+                  // --- KONTEN KANAN ---
+                  Expanded(
+                    child: Column(
+                      children: [
+                        // HEADER TRANSPARAN (Tanpa Username)
+                        _buildHeaderNoName(user), 
+                        
+                        // HALAMAN UTAMA
+                        Expanded(child: pages[_selectedIndex]),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ],
           );
         },
       ),
-      // Navigasi Bawah
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          color: const Color(0xFF0F0025).withValues(alpha: 0.9),
-          border: const Border(top: BorderSide(color: Colors.white10)),
-        ),
-        child: BottomNavigationBar(
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          type: BottomNavigationBarType.fixed,
-          selectedItemColor: Colors.cyanAccent,
-          unselectedItemColor: Colors.white38,
-          currentIndex: _selectedIndex,
-          onTap: _onItemTapped,
-          items: const [
-            BottomNavigationBarItem(icon: Icon(Icons.checkroom), label: 'AVATAR'),
-            BottomNavigationBarItem(icon: Icon(Icons.auto_stories), label: 'STORY'),
-            BottomNavigationBarItem(icon: Icon(Icons.flash_on), label: 'MATCH'),
-          ],
-        ),
-      ),
     );
   }
 
-  // Widget Loading Cantik
-  Widget _buildLoadingState(String message) {
-    return Container(
-      color: const Color(0xFF0F0025),
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const CircularProgressIndicator(color: Colors.cyanAccent),
-            const SizedBox(height: 16),
-            Text(message, style: const TextStyle(color: Colors.white70)),
-          ],
-        ),
-      ),
-    );
-  }
+  // ===========================================================================
+  // WIDGETS UI (FINAL REVISION)
+  // ===========================================================================
 
-  // Widget Header (Copy dari sebelumnya)
-  Widget _buildProfileHeader(UserModel user) {
-    double progress = user.maxXp > 0 ? (user.currentXp / user.maxXp).clamp(0.0, 1.0) : 0.0;
+  // 1. SIDEBAR KIRI (Lebih Bening & Ada Indikator)
+  Widget _buildRefinedSidebar(UserModel user) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      width: 72, 
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.3),
-        border: const Border(bottom: BorderSide(color: Colors.white10)),
+        // Opacity dikurangi jadi 0.2 agar tidak terlalu pekat
+        color: Colors.black.withOpacity(0.2), 
+        border: const Border(right: BorderSide(color: Colors.white10, width: 1)),
       ),
+      child: ClipRRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Column(
+            children: [
+              const SizedBox(height: 15),
+              
+              // A. FOTO PROFIL
+              _buildSideProfileIcon(user),
+              
+              const Spacer(), 
+              
+              // B. MENU NAVIGASI (Dengan Indikator Garis)
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildNavItemWithLine(0, Icons.checkroom, "AVATAR"),
+                  _buildNavItemWithLine(1, Icons.auto_stories, "STORY"),
+                  _buildNavItemWithLine(2, Icons.flash_on, "MATCH"),
+                ],
+              ),
+              
+              const Spacer(), 
+              
+              // C. PENGATURAN
+              IconButton(
+                onPressed: () {},
+                icon: const Icon(Icons.settings, color: Colors.white24, size: 20),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+              const SizedBox(height: 20),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // 2. HEADER ATAS (Tanpa Nama User)
+  Widget _buildHeaderNoName(UserModel user) {
+    double xpProgress = user.maxXp > 0 ? (user.currentXp / user.maxXp).clamp(0.0, 1.0) : 0.0;
+
+    return Container(
+      height: 60,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      color: Colors.transparent, 
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
+          
+          // BADGE LEVEL
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: const Color(0xFF2A2A2A),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.white24),
+              color: Colors.amber, 
+              borderRadius: BorderRadius.circular(4),
+              boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4, offset: Offset(0, 2))]
             ),
-            child: Text("Lv. ${user.level}", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            child: Text("Lv.${user.level}", style: const TextStyle(color: Colors.black, fontSize: 11, fontWeight: FontWeight.bold)),
           ),
-          const SizedBox(width: 10),
-          CircleAvatar(
-            backgroundColor: Colors.purple,
-            radius: 16,
-            child: Text(user.username.isNotEmpty ? user.username[0].toUpperCase() : "U"),
-          ),
-          const SizedBox(width: 8),
+
+          const SizedBox(width: 15),
+
+          // XP BAR
           Expanded(
             child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  user.username,
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 4),
                 ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
+                  borderRadius: BorderRadius.circular(2),
                   child: LinearProgressIndicator(
-                    value: progress,
-                    backgroundColor: Colors.grey[800],
-                    color: const Color(0xFFBD00FF),
-                    minHeight: 6,
+                    value: xpProgress,
+                    backgroundColor: Colors.white10, 
+                    color: const Color(0xFFBD00FF), 
+                    minHeight: 5,
                   ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  "${user.currentXp}/${user.maxXp} XP", 
+                  style: const TextStyle(color: Colors.white38, fontSize: 8)
                 ),
               ],
             ),
           ),
-          const SizedBox(width: 15),
+
+          const SizedBox(width: 30),
+
+          // GOLD
           Row(
             children: [
-              const Icon(Icons.monetization_on, color: Colors.amber, size: 20),
+              const Icon(Icons.monetization_on, color: Colors.amber, size: 18),
               const SizedBox(width: 4),
-              Text("${user.gold}", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              Text(
+                "${user.gold}", 
+                style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 14)
+              ),
             ],
           ),
         ],
       ),
     );
+  }
+
+  // --- KOMPONEN ITEM ---
+
+  Widget _buildSideProfileIcon(UserModel user) {
+    return GestureDetector(
+      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ProfileScreen())),
+      child: Container(
+        height: 45, width: 45,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.cyanAccent.withOpacity(0.5), width: 1.5),
+        ),
+        child: CircleAvatar(
+          backgroundColor: const Color(0xFF2A0040),
+          backgroundImage: user.photoUrl.isNotEmpty ? NetworkImage(user.photoUrl) : null,
+          child: user.photoUrl.isEmpty ? Text(user.username[0].toUpperCase(), style: const TextStyle(color: Colors.white, fontSize: 14)) : null,
+        ),
+      ),
+    );
+  }
+
+  // Item Navigasi dengan Garis Samping
+  Widget _buildNavItemWithLine(int index, IconData icon, String label) {
+    bool isSelected = _selectedIndex == index;
+    
+    return GestureDetector(
+      onTap: () => _onItemTapped(index),
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 4),
+        height: 55, 
+        color: Colors.transparent,
+        child: Stack(
+          alignment: Alignment.centerLeft, // Align left untuk garis
+          children: [
+            // A. GARIS INDIKATOR (Muncul hanya jika selected)
+            AnimatedPositioned(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOut,
+              left: 0,
+              top: isSelected ? 12 : 27, // Animasi tinggi
+              bottom: isSelected ? 12 : 27,
+              child: Container(
+                width: 3, 
+                decoration: BoxDecoration(
+                  color: isSelected ? Colors.cyanAccent : Colors.transparent,
+                  borderRadius: const BorderRadius.only(topRight: Radius.circular(2), bottomRight: Radius.circular(2)),
+                  boxShadow: isSelected ? [const BoxShadow(color: Colors.cyanAccent, blurRadius: 4)] : []
+                ),
+              ),
+            ),
+
+            // B. IKON DAN LABEL (Centered)
+            Center(
+              child: AnimatedScale(
+                scale: isSelected ? 1.1 : 1.0,
+                duration: const Duration(milliseconds: 200),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      icon, 
+                      size: 24, 
+                      color: isSelected ? Colors.cyanAccent : Colors.white24
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      label, 
+                      style: TextStyle(
+                        fontSize: 8, 
+                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal, 
+                        color: isSelected ? Colors.cyanAccent : Colors.white24,
+                        letterSpacing: 0.5
+                      )
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(child: ElevatedButton(onPressed: _forceCreateProfile, child: const Text("Start Game")));
   }
 }

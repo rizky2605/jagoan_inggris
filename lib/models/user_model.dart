@@ -6,11 +6,13 @@ class UserModel {
   final String username;
   final String email;
   final String photoUrl;
+  final String bio; // [BARU] Untuk status/moto di profil
 
   // --- PROGRESI PLAYER ---
   final int level;
-  final int currentXp;
-  final int maxXp;
+  final int currentXp; // XP saat ini di level berjalan
+  final int maxXp;     // Target XP untuk naik level
+  final int totalXp;   // [BARU] Akumulasi XP seumur hidup (untuk Leaderboard)
   final int streakCount;
   final DateTime? lastLogin;
 
@@ -40,9 +42,11 @@ class UserModel {
     required this.username,
     required this.email,
     this.photoUrl = '',
+    this.bio = 'Jagoan Inggris siap bertarung!', // Default Bio
     this.level = 1,
     this.currentXp = 0,
     this.maxXp = 1000,
+    this.totalXp = 0, // Default Total XP 0
     this.streakCount = 0,
     this.lastLogin,
     // Default Daily Stats
@@ -72,11 +76,13 @@ class UserModel {
       username: data['username'] ?? 'Jagoan Baru',
       email: data['email'] ?? '',
       photoUrl: data['photoUrl'] ?? '',
+      bio: data['bio'] ?? 'Jagoan Inggris siap bertarung!', // Load Bio
       
       // Safe Casting .toInt()
       level: (data['level'] ?? 1).toInt(),
       currentXp: (data['current_xp'] ?? 0).toInt(),
       maxXp: (data['max_xp'] ?? 1000).toInt(),
+      totalXp: (data['total_xp'] ?? 0).toInt(), // Load Total XP
       streakCount: (data['streak_count'] ?? 0).toInt(),
       lastLogin: (data['last_login'] as Timestamp?)?.toDate(),
       
@@ -109,9 +115,11 @@ class UserModel {
       'username': username,
       'email': email,
       'photoUrl': photoUrl,
+      'bio': bio, // Simpan Bio
       'level': level,
       'current_xp': currentXp,
       'max_xp': maxXp,
+      'total_xp': totalXp, // Simpan Total XP
       'streak_count': streakCount,
       'last_login': lastLogin,
       
@@ -131,7 +139,7 @@ class UserModel {
       // Story & SRS
       'last_completed_level': lastCompletedLevel,
       'unlocked_milestones': unlockedMilestones,
-      'levels_progress': levelsProgress, // Jangan lupa simpan ini!
+      'levels_progress': levelsProgress, 
     };
   }
 }

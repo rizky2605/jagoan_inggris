@@ -1,15 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'daily_learning_screen.dart'; // Import screen belajar harian
-import 'vocabulary_screen.dart';    // Import screen flashcard (review)
+import 'package:firebase_auth/firebase_auth.dart';
+import '../../core/services/vocabulary_service.dart';
+import 'daily_learning_screen.dart';
+import 'vocabulary_screen.dart';
 
 class VocabularyMenuScreen extends StatelessWidget {
   const VocabularyMenuScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final VocabularyService vocabService = VocabularyService();
+    final String uid = FirebaseAuth.instance.currentUser!.uid;
+
     return Scaffold(
-      // Background Gradient Konsisten
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
@@ -21,71 +25,64 @@ class VocabularyMenuScreen extends StatelessWidget {
         child: SafeArea(
           child: Column(
             children: [
-              // --- APP BAR CUSTOM ---
+              // Header
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
                 child: Row(
                   children: [
-                    IconButton(
-                      icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
-                      onPressed: () => Navigator.pop(context),
-                    ),
+                    IconButton(icon: const Icon(Icons.arrow_back_ios, color: Colors.white), onPressed: () => Navigator.pop(context)),
                     Expanded(
-                      child: Text(
-                        "Pusat Kosa Kata",
-                        style: GoogleFonts.orbitron(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
+                      child: Text("Pusat Kosa Kata",
+                          style: GoogleFonts.orbitron(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                          textAlign: TextAlign.center),
                     ),
-                    const SizedBox(width: 40), // Penyeimbang layout
+                    const SizedBox(width: 40),
                   ],
                 ),
               ),
-
               const SizedBox(height: 20),
 
-              // --- PILIHAN MENU ---
+              // Menu Options
               Expanded(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 24),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      // MENU 1: BELAJAR HARIAN
-                      _buildMenuCard(
-                        context,
-                        title: "Belajar Kata Baru",
-                        subtitle: "5 Kata/Hari + Tips Menghafal",
-                        icon: Icons.school_rounded,
-                        color1: Colors.cyanAccent,
-                        color2: Colors.blueAccent,
-                        onTap: () {
-                          Navigator.push(
+                      // 1. MENU BELAJAR BARU (Dengan Counter Total)
+                      StreamBuilder<int>(
+                        stream: vocabService.getTotalLearnedStream(uid),
+                        builder: (context, snapshot) {
+                          int total = snapshot.data ?? 0;
+                          return _buildMenuCard(
                             context,
-                            MaterialPageRoute(builder: (context) => const DailyLearningScreen()),
+                            title: "Belajar Kata Baru",
+                            subtitle: "Total dipelajari: $total Kata", // Tampilkan Total
+                            icon: Icons.school_rounded,
+                            color1: Colors.cyanAccent,
+                            color2: Colors.blueAccent,
+                            badgeCount: 0, // Tidak butuh badge merah
+                            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const DailyLearningScreen())),
                           );
                         },
                       ),
 
                       const SizedBox(height: 30),
 
-                      // MENU 2: REVIEW FLASHCARD
-                      _buildMenuCard(
-                        context,
-                        title: "Review Flashcard",
-                        subtitle: "Ulangi kata yang sudah disimpan",
-                        icon: Icons.style_rounded, // Ikon tumpukan kartu
-                        color1: const Color(0xFFBD00FF), // Ungu Neon
-                        color2: const Color(0xFFD500F9),
-                        onTap: () {
-                          Navigator.push(
+                      // 2. MENU REVIEW (Dengan Counter Due)
+                      StreamBuilder<int>(
+                        stream: vocabService.getDueCountStream(uid),
+                        builder: (context, snapshot) {
+                          int dueCount = snapshot.data ?? 0;
+                          return _buildMenuCard(
                             context,
-                            MaterialPageRoute(builder: (context) => const VocabularyScreen()),
+                            title: "Review Flashcard",
+                            subtitle: dueCount > 0 ? "Ada $dueCount kata perlu direview!" : "Semua aman untuk saat ini.",
+                            icon: Icons.style_rounded,
+                            color1: const Color(0xFFBD00FF),
+                            color2: const Color(0xFFD500F9),
+                            badgeCount: dueCount, // Tampilkan Badge Merah
+                            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const VocabularyScreen())),
                           );
                         },
                       ),
@@ -100,59 +97,30 @@ class VocabularyMenuScreen extends StatelessWidget {
     );
   }
 
-  // WIDGET KARTU MENU CANTIK
   Widget _buildMenuCard(
     BuildContext context, {
-    required String title,
-    required String subtitle,
-    required IconData icon,
-    required Color color1,
-    required Color color2,
-    required VoidCallback onTap,
+    required String title, required String subtitle, required IconData icon,
+    required Color color1, required Color color2, required int badgeCount, required VoidCallback onTap,
   }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
         height: 140,
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [color1.withOpacity(0.9), color2.withOpacity(0.9)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
+          gradient: LinearGradient(colors: [color1.withAlpha(230), color2.withAlpha(230)], begin: Alignment.topLeft, end: Alignment.bottomRight),
           borderRadius: BorderRadius.circular(24),
-          boxShadow: [
-            BoxShadow(
-              color: color1.withOpacity(0.4),
-              blurRadius: 20,
-              offset: const Offset(0, 8),
-            ),
-          ],
-          border: Border.all(color: Colors.white.withOpacity(0.2), width: 1),
+          boxShadow: [BoxShadow(color: color1.withAlpha(102), blurRadius: 20, offset: const Offset(0, 8))],
+          border: Border.all(color: const Color(0x33FFFFFF), width: 1),
         ),
         child: Stack(
           children: [
-            // Hiasan Background (Lingkaran transparan)
-            Positioned(
-              right: -20,
-              top: -20,
-              child: CircleAvatar(
-                radius: 60,
-                backgroundColor: Colors.white.withOpacity(0.1),
-              ),
-            ),
-
-            // Konten Utama
             Padding(
               padding: const EdgeInsets.all(24),
               child: Row(
                 children: [
                   Container(
                     padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.2),
-                      shape: BoxShape.circle,
-                    ),
+                    decoration: const BoxDecoration(color: Color(0x33000000), shape: BoxShape.circle),
                     child: Icon(icon, color: Colors.white, size: 32),
                   ),
                   const SizedBox(width: 20),
@@ -161,22 +129,9 @@ class VocabularyMenuScreen extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Text(
-                          title,
-                          style: GoogleFonts.poppins(
-                            color: Colors.white,
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                        Text(title, style: GoogleFonts.poppins(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
                         const SizedBox(height: 4),
-                        Text(
-                          subtitle,
-                          style: GoogleFonts.poppins(
-                            color: Colors.white.withOpacity(0.9),
-                            fontSize: 12,
-                          ),
-                        ),
+                        Text(subtitle, style: GoogleFonts.poppins(color: const Color(0xE6FFFFFF), fontSize: 12)),
                       ],
                     ),
                   ),
@@ -184,6 +139,17 @@ class VocabularyMenuScreen extends StatelessWidget {
                 ],
               ),
             ),
+            
+            // BADGE NOTIFIKASI (Jika ada review)
+            if (badgeCount > 0)
+              Positioned(
+                top: 15, right: 15,
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: const BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle),
+                  child: Text("$badgeCount", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                ),
+              ),
           ],
         ),
       ),

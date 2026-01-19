@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../models/word_model.dart';
 import '../../core/services/vocabulary_service.dart';
+import 'vocabulary_screen.dart'; // Untuk navigasi ke Review
 
 class DailyLearningScreen extends StatefulWidget {
   const DailyLearningScreen({super.key});
@@ -14,42 +15,42 @@ class DailyLearningScreen extends StatefulWidget {
 class _DailyLearningScreenState extends State<DailyLearningScreen> {
   final VocabularyService _vocabService = VocabularyService();
   final PageController _pageController = PageController();
+  final String uid = FirebaseAuth.instance.currentUser!.uid;
   
-  // State
+  List<WordModel> _dailyWords = []; // Data dinamis
+  bool _isLoading = true;
   int _currentIndex = 0;
   bool _isQuizMode = false;
   int _quizScore = 0;
   bool _isSaving = false;
 
-  // --- DATA KATA HARIAN (Nanti bisa diambil dari Server) ---
-  // Inilah 5 kata yang akan dipelajari hari ini
-  final List<WordModel> _dailyWords = [
-    WordModel(id: '', word: 'Abundant', pronunciation: '/əˈbʌn.dənt/', category: 'Adjective', meaning: 'Melimpah', 
-      mnemonic: "Ingat 'A Bun Dance' (Roti Menari). Rotinya menari karena selainya MELIMPAH (Abundant).", 
-      exampleSentence: "We have abundant food.", nextReview: DateTime.now()),
-    WordModel(id: '', word: 'Gloomy', pronunciation: '/ˈɡluː.mi/', category: 'Adjective', meaning: 'Suram / Mendung', 
-      mnemonic: "Ingat 'GLUE' (Lem). Kalau kaki kena lem, perasaan jadi GLOOMY (Suram/Sedih).", 
-      exampleSentence: "The sky is gloomy.", nextReview: DateTime.now()),
-    WordModel(id: '', word: 'Keen', pronunciation: '/kiːn/', category: 'Adjective', meaning: 'Tertarik / Tajam', 
-      mnemonic: "Mirip nama 'IKIN'. Si Ikin sangat KEEN (Tertarik) belajar gitar.", 
-      exampleSentence: "She is keen on music.", nextReview: DateTime.now()),
-    WordModel(id: '', word: 'Candid', pronunciation: '/ˈkæn.dɪd/', category: 'Adjective', meaning: 'Jujur / Apa adanya', 
-      mnemonic: "Mirip 'KANDIDAT'. Kandidat pemimpin harus CANDID (Jujur).", 
-      exampleSentence: "To be candid, I dislike it.", nextReview: DateTime.now()),
-    WordModel(id: '', word: 'Huge', pronunciation: '/hjuːdʒ/', category: 'Adjective', meaning: 'Sangat Besar', 
-      mnemonic: "Bayangkan 'HIU'. Ikan Hiu itu badannya HUGE (Besar sekali).", 
-      exampleSentence: "A huge mistake.", nextReview: DateTime.now()),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _loadNewWords();
+  }
 
-  // --- LOGIKA ALUR ---
+  // --- 1. LOAD KATA DINAMIS ---
+  Future<void> _loadNewWords() async {
+    setState(() => _isLoading = true);
+    List<WordModel> newBatch = await _vocabService.fetchNewDailyBatch(uid);
+    
+    setState(() {
+      _dailyWords = newBatch;
+      _isLoading = false;
+      // Reset state lainnya
+      _currentIndex = 0;
+      _isQuizMode = false;
+      _quizScore = 0;
+      _isSaving = false;
+    });
+  }
 
   void _nextStep() {
     if (_currentIndex < _dailyWords.length - 1) {
-      // Pindah ke kata berikutnya
       _pageController.nextPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
       setState(() => _currentIndex++);
     } else {
-      // Kata habis, masuk ke Kuis
       setState(() {
         _isQuizMode = true;
         _currentIndex = 0;
@@ -58,12 +59,7 @@ class _DailyLearningScreenState extends State<DailyLearningScreen> {
   }
 
   void _answerQuiz(bool isCorrect) async {
-    if (isCorrect) {
-      // Kita gunakan variabel ini sekarang
-      setState(() {
-        _quizScore++; 
-      });
-    }
+    if (isCorrect) setState(() => _quizScore++);
 
     if (_currentIndex < _dailyWords.length - 1) {
       setState(() => _currentIndex++);
@@ -72,12 +68,11 @@ class _DailyLearningScreenState extends State<DailyLearningScreen> {
     }
   }
 
-  // 2. UPDATE DIALOG SELESAI (Tampilkan Skor)
+  // --- 2. DIALOG PENYELESAIAN (DUA OPSI) ---
   Future<void> _finishDailyLesson() async {
     setState(() => _isSaving = true);
-    
-    String uid = FirebaseAuth.instance.currentUser!.uid;
-    await _vocabService.saveDailyBatch(uid, _dailyWords);
+    await _vocabService.saveDailyBatch(uid, _dailyWords); // Simpan ke DB
+    setState(() => _isSaving = false);
 
     if (mounted) {
       showDialog(
@@ -85,29 +80,65 @@ class _DailyLearningScreenState extends State<DailyLearningScreen> {
         barrierDismissible: false,
         builder: (context) => AlertDialog(
           backgroundColor: const Color(0xFF2A2A3A),
-          title: const Text("Hafalan Selesai!", style: TextStyle(color: Colors.white)),
-          // TAMPILKAN SKOR DI SINI AGAR VARIABEL TERPAKAI
+          title: const Text("Hafalan Selesai!", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           content: Text(
-            "Skor Kuis: $_quizScore/${_dailyWords.length}\n\nKata-kata ini sudah masuk ke Bank Flashcard kamu.", 
+            "Skor Kuis: $_quizScore/${_dailyWords.length}\nKata-kata ini sudah disimpan.", 
             style: const TextStyle(color: Colors.white70)
           ),
           actions: [
+            // TOMBOL 1: REVIEW KATA INI SAJA (Flashcard Mode khusus kata ini)
             TextButton(
-              child: const Text("OK, MANTAP", style: TextStyle(color: Colors.cyanAccent)),
+              child: const Text("REVIEW 5 KATA INI", style: TextStyle(color: Colors.amber)),
               onPressed: () {
-                Navigator.pop(context); 
-                Navigator.pop(context); 
+                Navigator.pop(context); // Tutup dialog
+                // Kirim list kata spesifik ke VocabularyScreen (Perlu update VocabularyScreen dikit)
+                Navigator.pushReplacement(
+                  context, 
+                  MaterialPageRoute(builder: (context) => VocabularyScreen(overrideWords: _dailyWords))
+                );
               },
-            )
+            ),
+            
+            // TOMBOL 2: BELAJAR LAGI (Load Batch Baru)
+            TextButton(
+              child: const Text("BELAJAR 5 LAGI", style: TextStyle(color: Colors.cyanAccent)),
+              onPressed: () {
+                Navigator.pop(context); // Tutup dialog
+                _loadNewWords(); // Reload halaman dengan kata baru
+              },
+            ),
+
+            // TOMBOL 3: KELUAR
+            TextButton(
+              child: const Text("SELESAI", style: TextStyle(color: Colors.white54)),
+              onPressed: () {
+                Navigator.pop(context);
+                Navigator.pop(context);
+              },
+            ),
           ],
         ),
       );
     }
   }
 
-
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Scaffold(
+        backgroundColor: Color(0xFF0F0025),
+        body: Center(child: CircularProgressIndicator(color: Colors.cyanAccent)),
+      );
+    }
+
+    if (_dailyWords.isEmpty) {
+      return Scaffold(
+        backgroundColor: const Color(0xFF0F0025),
+        appBar: AppBar(backgroundColor: Colors.transparent, leading: const BackButton(color: Colors.white)),
+        body: const Center(child: Text("Hore! Semua kata sudah dipelajari.", style: TextStyle(color: Colors.white))),
+      );
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFF0F0025),
       appBar: AppBar(
@@ -121,6 +152,7 @@ class _DailyLearningScreenState extends State<DailyLearningScreen> {
     );
   }
 
+  // ... (Gunakan Fungsi _buildLearningUI dan _buildQuizUI dari kode sebelumnya, tidak ada perubahan UI di bagian ini) ...
   // --- TAMPILAN 1: BELAJAR (LEARNING PHASE) ---
   Widget _buildLearningUI() {
     return Column(
@@ -148,9 +180,9 @@ class _DailyLearningScreenState extends State<DailyLearningScreen> {
                     Container(
                       padding: const EdgeInsets.all(24),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.05),
+                        color: const Color(0x0DFFFFFF),
                         borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: Colors.cyanAccent.withOpacity(0.5)),
+                        border: Border.all(color: const Color(0x8018FFFF)),
                       ),
                       child: Column(
                         children: [
@@ -169,7 +201,7 @@ class _DailyLearningScreenState extends State<DailyLearningScreen> {
                       decoration: BoxDecoration(
                         color: const Color(0xFF2A2A3A),
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.amber.withOpacity(0.3)),
+                        border: Border.all(color: const Color(0x4DFFC107)),
                       ),
                       child: Column(
                         children: [

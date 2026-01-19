@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import '../../core/services/auth_service.dart';
 
+// [PENTING] Import MainScreen agar bisa pindah halaman setelah login/daftar
+import '../home/main_screen.dart'; 
+
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
 
@@ -12,21 +15,17 @@ class _AuthScreenState extends State<AuthScreen> {
   final AuthService _auth = AuthService();
   final _formKey = GlobalKey<FormState>();
 
-  // Kontroller untuk input teks
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
-  // [BARU] Controller untuk konfirmasi password
   final TextEditingController _confirmPasswordController = TextEditingController();
   final TextEditingController _usernameController = TextEditingController();
 
-  // State untuk logika UI
-  bool _isLogin = true; // True = Mode Login, False = Mode Daftar
-  bool _isLoading = false; // Untuk menampilkan loading spinner
-  bool _isObscure = true; // Untuk menyembunyikan password utama
-  // [BARU] State untuk menyembunyikan password konfirmasi
+  bool _isLogin = true; 
+  bool _isLoading = false; 
+  bool _isObscure = true; 
   bool _isConfirmObscure = true; 
 
-  // Fungsi Utama Login/Daftar
+  // --- FUNGSI UTAMA (DIPERBAIKI) ---
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) {
       return;
@@ -35,6 +34,7 @@ class _AuthScreenState extends State<AuthScreen> {
     setState(() => _isLoading = true);
 
     String message = "";
+    bool success = false; // Flag untuk menandai keberhasilan
 
     try {
       if (_isLogin) {
@@ -45,6 +45,7 @@ class _AuthScreenState extends State<AuthScreen> {
         );
         if (user != null) {
           message = "Selamat datang kembali!";
+          success = true; // Tandai sukses
         } else {
           message = "Login gagal. Periksa email/password Anda.";
         }
@@ -57,35 +58,47 @@ class _AuthScreenState extends State<AuthScreen> {
         );
         if (user != null) {
           message = "Akun berhasil dibuat! Selamat bergabung.";
+          success = true; // Tandai sukses
         } else {
           message = "Pendaftaran gagal. Email mungkin sudah dipakai.";
         }
       }
     } catch (e) {
-      message = "Terjadi kesalahan sistem.";
+      message = "Terjadi kesalahan sistem: $e";
     }
 
     setState(() => _isLoading = false);
 
-    // Tampilkan pesan (Snackbar)
+    // Tampilkan pesan
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(message),
-          backgroundColor: message.contains("gagal") ? Colors.redAccent : Colors.green,
+          backgroundColor: success ? Colors.green : Colors.redAccent,
         ),
       );
+
+      // [FIX UTAMA DISINI]
+      // Jika login/daftar BERHASIL, pindah ke MainScreen
+      if (success) {
+        // Beri sedikit jeda agar user sempat membaca pesan sukses
+        await Future.delayed(const Duration(seconds: 1));
+        
+        if (mounted) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (context) => const MainScreen()),
+          );
+        }
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // Mengambil tema warna dari app_theme.dart (Cyan & Purple)
     final primaryColor = Theme.of(context).primaryColor;
     final secondaryColor = Theme.of(context).colorScheme.secondary;
 
     return Scaffold(
-      // Background gradient agar terlihat seperti angkasa
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
@@ -102,7 +115,6 @@ class _AuthScreenState extends State<AuthScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // --- 1. LOGO & JUDUL ---
                   const Icon(Icons.rocket_launch_rounded, size: 80, color: Colors.cyanAccent),
                   const SizedBox(height: 20),
                   Text(
@@ -113,7 +125,7 @@ class _AuthScreenState extends State<AuthScreen> {
                       fontWeight: FontWeight.bold,
                       color: primaryColor,
                       shadows: [
-                        BoxShadow(color: primaryColor.withValues(alpha: 0.5), blurRadius: 20)
+                        BoxShadow(color: primaryColor.withOpacity(0.5), blurRadius: 20)
                       ],
                     ),
                   ),
@@ -124,17 +136,15 @@ class _AuthScreenState extends State<AuthScreen> {
                   ),
                   const SizedBox(height: 40),
 
-                  // --- 2. INPUT FORM (Glassmorphism Style) ---
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.05),
+                      color: Colors.white.withOpacity(0.05),
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                      border: Border.all(color: Colors.white.withOpacity(0.1)),
                     ),
                     child: Column(
                       children: [
-                        // Input Username (Hanya muncul saat Daftar)
                         if (!_isLogin) ...[
                           _buildTextField(
                             controller: _usernameController,
@@ -145,7 +155,6 @@ class _AuthScreenState extends State<AuthScreen> {
                           const SizedBox(height: 15),
                         ],
 
-                        // Input Email
                         _buildTextField(
                           controller: _emailController,
                           icon: Icons.email_outlined,
@@ -154,7 +163,6 @@ class _AuthScreenState extends State<AuthScreen> {
                         ),
                         const SizedBox(height: 15),
 
-                        // Input Password
                         _buildTextField(
                           controller: _passwordController,
                           icon: Icons.lock_outline,
@@ -167,12 +175,11 @@ class _AuthScreenState extends State<AuthScreen> {
                           validator: (val) => val!.length < 6 ? "Minimal 6 karakter" : null,
                         ),
 
-                        // [BARU] Input Konfirmasi Password (Hanya muncul saat Daftar)
                         if (!_isLogin) ...[
                           const SizedBox(height: 15),
                           _buildTextField(
                             controller: _confirmPasswordController,
-                            icon: Icons.lock_reset, // Ikon berbeda untuk pembeda visual
+                            icon: Icons.lock_reset,
                             label: "Konfirmasi Password",
                             isPassword: true,
                             isObscure: _isConfirmObscure,
@@ -191,7 +198,6 @@ class _AuthScreenState extends State<AuthScreen> {
                   ),
                   const SizedBox(height: 30),
 
-                  // --- 3. TOMBOL AKSI ---
                   _isLoading
                       ? const CircularProgressIndicator(color: Colors.cyanAccent)
                       : SizedBox(
@@ -205,7 +211,7 @@ class _AuthScreenState extends State<AuthScreen> {
                                 borderRadius: BorderRadius.circular(15),
                               ),
                               elevation: 10,
-                              shadowColor: secondaryColor.withValues(alpha: 0.5),
+                              shadowColor: secondaryColor.withOpacity(0.5),
                             ),
                             child: Text(
                               _isLogin ? "MASUK SEKARANG" : "BUAT AKUN",
@@ -220,14 +226,11 @@ class _AuthScreenState extends State<AuthScreen> {
                   
                   const SizedBox(height: 20),
 
-                  // --- 4. TOGGLE LOGIN/DAFTAR ---
                   TextButton(
                     onPressed: () {
                       setState(() {
-                        _isLogin = !_isLogin; // Switch mode
-                        _formKey.currentState?.reset(); // Reset pesan error
-                        
-                        // Opsional: Bersihkan field password saat ganti mode agar bersih
+                        _isLogin = !_isLogin; 
+                        _formKey.currentState?.reset();
                         _passwordController.clear();
                         _confirmPasswordController.clear();
                       });
@@ -257,7 +260,6 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
-  // --- Widget Helper untuk Text Field agar rapi ---
   Widget _buildTextField({
     required TextEditingController controller,
     required IconData icon,
@@ -284,7 +286,7 @@ class _AuthScreenState extends State<AuthScreen> {
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+          borderSide: BorderSide(color: Colors.white.withOpacity(0.1)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
