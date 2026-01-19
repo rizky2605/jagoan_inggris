@@ -7,18 +7,27 @@ import '../../models/user_model.dart';
 class MatchService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  // ===========================================================================
-  // 1. MATCHMAKING SYSTEM (FIFO - ROBUST)
-  // ===========================================================================
-  
+  // Helper untuk mendapatkan path avatar dari ID item
+  String _getAvatarPath(String? itemId) {
+    // Logika sederhana: Jika ID-nya 'monster', pakai monster.glb, default avatar_default.glb
+    // Anda bisa memperluas ini nanti sesuai item shop Anda
+    if (itemId == 'monster') return 'assets/models/monster.glb';
+    if (itemId == 'teacher') return 'assets/models/teacher.glb';
+    return 'assets/models/avatar_default.glb';
+  }
+
   Future<String> findMatch(UserModel user) async {
     try {
-      // 1. Daftar Antrean
+      // Ambil Avatar User saat ini
+      String myAvatarPath = _getAvatarPath(user.equippedLoadout['body']);
+
+      // 1. Daftar Antrean (Sertakan Avatar Path)
       await _db.collection('match_queue').doc(user.uid).set({
         'uid': user.uid,
         'username': user.username,
         'photoUrl': user.photoUrl,
         'mmr': user.mmr,
+        'avatarPath': myAvatarPath, // [BARU] Simpan avatar ke queue
         'status': 'searching', 
         'timestamp': FieldValue.serverTimestamp(),
         'lastSeen': FieldValue.serverTimestamp(),
@@ -37,7 +46,6 @@ class MatchService {
       for (var doc in queueSnapshot.docs) {
         if (doc['uid'] == user.uid) continue;
 
-        // Filter manual lastSeen
         if (doc.data() != null && (doc.data() as Map).containsKey('lastSeen')) {
           Timestamp? ts = doc['lastSeen'];
           if (ts != null && ts.toDate().isBefore(threshold)) continue; 
@@ -54,6 +62,9 @@ class MatchService {
 
           String matchId = _db.collection('matches').doc().id; 
           
+          // Ambil avatar lawan dari queue
+          String opponentAvatar = freshOpponent['avatarPath'] ?? 'assets/models/avatar_default.glb';
+
           MatchModel newMatch = MatchModel(
             matchId: matchId,
             player1Uid: freshOpponent['uid'],
@@ -62,6 +73,9 @@ class MatchService {
             player2Name: user.username,
             p1PhotoUrl: freshOpponent['photoUrl'] ?? '', 
             p2PhotoUrl: user.photoUrl,
+            // [BARU] Masukkan data avatar P1 dan P2
+            p1Avatar: opponentAvatar, 
+            p2Avatar: myAvatarPath, 
             status: 'playing',      
             currentRound: 1,
             p1Health: 100,
@@ -87,12 +101,13 @@ class MatchService {
     }
   }
 
+  // ... (Sisa fungsi cancelSearch, updateHeartbeat, submitAnswer, dll SAMA SEPERTI SEBELUMNYA)
+  // Tidak perlu diubah, copy saja dari kode sebelumnya.
+  
   Future<void> cancelSearch(String uid) async {
     try {
       await _db.collection('match_queue').doc(uid).delete();
-    } catch (e) {
-      print("Error cancel search: $e");
-    }
+    } catch (e) { print("Error cancel search: $e"); }
   }
 
   Future<void> updateHeartbeat(String uid) async {
@@ -103,10 +118,6 @@ class MatchService {
     } catch (e) {}
   }
 
-  // ===========================================================================
-  // 2. GAMEPLAY LOGIC (LOGIKA DARAH & SKOR)
-  // ===========================================================================
-  
   Future<void> submitAnswer(String matchId, String uid, String answer, int timeTaken, bool isPlayer1) async {
     await _db.collection('matches').doc(matchId).update({
       isPlayer1 ? 'p1Answer' : 'p2Answer': answer,
@@ -126,45 +137,23 @@ class MatchService {
     int p1NewScore = match.p1Score;
     int p2NewScore = match.p2Score;
 
-    // --- KONFIGURASI DAMAGE ---
-    const int damageWrong = 20;       // Salah = -20
-    const int damageSlow = 5;         // Benar tapi kalah cepat = -5
-    const int damageBothWrong = 10;   // Dua-duanya salah = -10
+    const int damageWrong = 20;       
+    const int damageSlow = 5;         
+    const int damageBothWrong = 10;   
     const int scoreWin = 20;
 
-    // 1. P1 Benar, P2 Salah
     if (p1Correct && !p2Correct) {
-      p2NewHealth -= damageWrong;
-      p1NewScore += scoreWin;
-    } 
-    // 2. P1 Salah, P2 Benar
-    else if (!p1Correct && p2Correct) {
-      p1NewHealth -= damageWrong;
-      p2NewScore += scoreWin;
-    } 
-    // 3. Keduanya Benar (Adu Cepat)
-    else if (p1Correct && p2Correct) {
+      p2NewHealth -= damageWrong; p1NewScore += scoreWin;
+    } else if (!p1Correct && p2Correct) {
+      p1NewHealth -= damageWrong; p2NewScore += scoreWin;
+    } else if (p1Correct && p2Correct) {
       int t1 = match.p1Time ?? 999999;
       int t2 = match.p2Time ?? 999999;
-
-      if (t1 < t2) { 
-        // P1 Lebih Cepat (P2 Kena damage dikit)
-        p2NewHealth -= damageSlow; 
-        p1NewScore += scoreWin;
-      } else if (t2 < t1) {
-        // P2 Lebih Cepat (P1 Kena damage dikit)
-        p1NewHealth -= damageSlow;
-        p2NewScore += scoreWin;
-      } else {
-        // Seri persis (Jarang)
-        p1NewScore += 10;
-        p2NewScore += 10;
-      }
-    } 
-    // 4. Keduanya Salah
-    else {
-      p1NewHealth -= damageBothWrong;
-      p2NewHealth -= damageBothWrong;
+      if (t1 < t2) { p2NewHealth -= damageSlow; p1NewScore += scoreWin; } 
+      else if (t2 < t1) { p1NewHealth -= damageSlow; p2NewScore += scoreWin; } 
+      else { p1NewScore += 10; p2NewScore += 10; }
+    } else {
+      p1NewHealth -= damageBothWrong; p2NewHealth -= damageBothWrong;
     }
 
     bool isGameOver = p1NewHealth <= 0 || p2NewHealth <= 0 || match.currentRound >= 5;
@@ -174,63 +163,36 @@ class MatchService {
       'p2Health': max(0, p2NewHealth),
       'p1Score': p1NewScore,
       'p2Score': p2NewScore,
-      'p1Answer': null, 
-      'p2Answer': null,
-      'p1Time': null,
-      'p2Time': null,
+      'p1Answer': null, 'p2Answer': null, 'p1Time': null, 'p2Time': null,
       'currentRound': isGameOver ? match.currentRound : match.currentRound + 1,
       'status': isGameOver ? 'finished' : 'playing',
       'currentQuestion': isGameOver ? null : _getRandomQuestion(),
     });
   }
 
-  // ===========================================================================
-  // 3. FINALIZE STATS (SINKRONISASI MMR DISINI)
-  // ===========================================================================
-  
   Future<void> finalizeMatchStats(MatchModel match) async {
     final matchRef = _db.collection('matches').doc(match.matchId);
     final matchSnap = await matchRef.get();
-    
     if (matchSnap.data()?['statsProcessed'] == true) return;
 
-    String winnerUid;
-    String loserUid;
-
-    // Logika Penentuan Pemenang (HP > Score > P2 Advantage)
-    if (match.p1Health > match.p2Health) {
-      winnerUid = match.player1Uid; loserUid = match.player2Uid;
-    } else if (match.p2Health > match.p1Health) {
-      winnerUid = match.player2Uid; loserUid = match.player1Uid;
-    } else if (match.p1Score > match.p2Score) {
-      winnerUid = match.player1Uid; loserUid = match.player2Uid;
-    } else {
-      winnerUid = match.player2Uid; loserUid = match.player1Uid;
-    }
+    String winnerUid; String loserUid;
+    if (match.p1Health > match.p2Health) { winnerUid = match.player1Uid; loserUid = match.player2Uid; } 
+    else if (match.p2Health > match.p1Health) { winnerUid = match.player2Uid; loserUid = match.player1Uid; } 
+    else if (match.p1Score > match.p2Score) { winnerUid = match.player1Uid; loserUid = match.player2Uid; } 
+    else { winnerUid = match.player2Uid; loserUid = match.player1Uid; }
 
     WriteBatch batch = _db.batch();
-
-    // [FIX] Update MMR (Harus sama dengan tampilan UI)
-    // WINNER: +25
     batch.update(_db.collection('users').doc(winnerUid), {
-      'mmr': FieldValue.increment(25), 
-      'winCount': FieldValue.increment(1),
-      'gold': FieldValue.increment(100), 
+      'mmr': FieldValue.increment(25), 'winCount': FieldValue.increment(1), 'gold': FieldValue.increment(100), 
     });
-
-    // LOSER: -15
     DocumentSnapshot loserSnap = await _db.collection('users').doc(loserUid).get();
     if (loserSnap.exists) {
        int currentMmr = (loserSnap.data() as Map<String, dynamic>)['mmr'] ?? 0;
-       int deduction = currentMmr >= 15 ? -15 : -currentMmr; // Jangan sampai minus
-
+       int deduction = currentMmr >= 15 ? -15 : -currentMmr;
        batch.update(_db.collection('users').doc(loserUid), {
-         'mmr': FieldValue.increment(deduction),
-         'lossCount': FieldValue.increment(1),
-         'gold': FieldValue.increment(20),
+         'mmr': FieldValue.increment(deduction), 'lossCount': FieldValue.increment(1), 'gold': FieldValue.increment(20),
        });
     }
-
     batch.update(matchRef, {'statsProcessed': true});
     await batch.commit();
   }
@@ -246,9 +208,7 @@ class MatchService {
     final List<Map<String, dynamic>> questionBank = [
       {'question': 'I ___ a student.', 'options': ['Am', 'Is', 'Are', 'Be'], 'correctAnswer': 'Am'},
       {'question': 'She ___ to school.', 'options': ['Go', 'Goes', 'Went', 'Gone'], 'correctAnswer': 'Goes'},
-      {'question': 'They ___ football now.', 'options': ['Play', 'Played', 'Are playing', 'Is playing'], 'correctAnswer': 'Are playing'},
-      {'question': 'Opposite of "Happy"', 'options': ['Sad', 'Angry', 'Glad', 'Joy'], 'correctAnswer': 'Sad'},
-      {'question': 'We ___ busy yesterday.', 'options': ['Was', 'Were', 'Are', 'Is'], 'correctAnswer': 'Were'},
+      {'question': 'Opposite of "Big"', 'options': ['Large', 'Small', 'Huge', 'Giant'], 'correctAnswer': 'Small'},
     ];
     return questionBank[Random().nextInt(questionBank.length)];
   }

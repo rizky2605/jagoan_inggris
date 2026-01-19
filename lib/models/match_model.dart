@@ -1,32 +1,31 @@
 class MatchModel {
   final String matchId;
-  final String player1Uid; // Host
-  final String player2Uid; // Challenger
+  final String player1Uid;
+  final String player2Uid;
   final String player1Name;
   final String player2Name;
-  
-  // --- [TAMBAHAN BARU] FOTO PROFILE ---
   final String p1PhotoUrl;
   final String p2PhotoUrl;
   
-  // Status Game
-  final String status; // 'waiting', 'playing', 'finished'
+  // [BARU] Avatar Path (URL/Asset path)
+  final String p1Avatar; 
+  final String p2Avatar;
+
+  final String status; // 'playing', 'finished'
   final int currentRound;
   
-  // State Player (HP & Jawaban)
   final int p1Health;
   final int p2Health;
   final int p1Score;
   final int p2Score;
   
-  // Logika Jawaban Ronde Ini
-  final String? p1Answer; // 'A', 'B', 'C', 'D' atau null
-  final int? p1Time;      // Waktu menjawab (milliseconds)
-  final String? p2Answer;
-  final int? p2Time;
-
-  // Soal Ronde Ini
   final Map<String, dynamic>? currentQuestion;
+  
+  // Gameplay Data
+  final String? p1Answer;
+  final String? p2Answer;
+  final int? p1Time;
+  final int? p2Time;
 
   MatchModel({
     required this.matchId,
@@ -34,22 +33,24 @@ class MatchModel {
     required this.player2Uid,
     required this.player1Name,
     required this.player2Name,
-    this.p1PhotoUrl = '', // Default kosong jika tidak ada foto
-    this.p2PhotoUrl = '', // Default kosong jika tidak ada foto
-    this.status = 'waiting',
-    this.currentRound = 1,
-    this.p1Health = 100,
-    this.p2Health = 100,
-    this.p1Score = 0,
-    this.p2Score = 0,
-    this.p1Answer,
-    this.p1Time,
-    this.p2Answer,
-    this.p2Time,
+    required this.p1PhotoUrl,
+    required this.p2PhotoUrl,
+    // [BARU] Default ke avatar default jika null
+    this.p1Avatar = 'assets/models/avatar_default.glb', 
+    this.p2Avatar = 'assets/models/avatar_default.glb',
+    required this.status,
+    required this.currentRound,
+    required this.p1Health,
+    required this.p2Health,
+    required this.p1Score,
+    required this.p2Score,
     this.currentQuestion,
+    this.p1Answer,
+    this.p2Answer,
+    this.p1Time,
+    this.p2Time,
   });
 
-  // --- SERIALISASI (Object ke Map Database) ---
   Map<String, dynamic> toMap() {
     return {
       'matchId': matchId,
@@ -57,43 +58,48 @@ class MatchModel {
       'player2Uid': player2Uid,
       'player1Name': player1Name,
       'player2Name': player2Name,
-      'p1PhotoUrl': p1PhotoUrl, // Simpan ke DB
-      'p2PhotoUrl': p2PhotoUrl, // Simpan ke DB
+      'p1PhotoUrl': p1PhotoUrl,
+      'p2PhotoUrl': p2PhotoUrl,
+      // [BARU]
+      'p1Avatar': p1Avatar,
+      'p2Avatar': p2Avatar,
       'status': status,
       'currentRound': currentRound,
       'p1Health': p1Health,
       'p2Health': p2Health,
       'p1Score': p1Score,
       'p2Score': p2Score,
-      'p1Answer': p1Answer,
-      'p1Time': p1Time,
-      'p2Answer': p2Answer,
-      'p2Time': p2Time,
       'currentQuestion': currentQuestion,
+      'p1Answer': p1Answer,
+      'p2Answer': p2Answer,
+      'p1Time': p1Time,
+      'p2Time': p2Time,
     };
   }
 
-  // --- DESERIALISASI (Map Database ke Object) ---
   factory MatchModel.fromMap(Map<String, dynamic> map) {
     return MatchModel(
       matchId: map['matchId'] ?? '',
       player1Uid: map['player1Uid'] ?? '',
       player2Uid: map['player2Uid'] ?? '',
-      player1Name: map['player1Name'] ?? '',
-      player2Name: map['player2Name'] ?? '',
-      p1PhotoUrl: map['p1PhotoUrl'] ?? '', // Ambil dari DB
-      p2PhotoUrl: map['p2PhotoUrl'] ?? '', // Ambil dari DB
-      status: map['status'] ?? 'waiting',
+      player1Name: map['player1Name'] ?? 'Unknown',
+      player2Name: map['player2Name'] ?? 'Unknown',
+      p1PhotoUrl: map['p1PhotoUrl'] ?? '',
+      p2PhotoUrl: map['p2PhotoUrl'] ?? '',
+      // [BARU] Ambil data avatar
+      p1Avatar: map['p1Avatar'] ?? 'assets/models/avatar_default.glb',
+      p2Avatar: map['p2Avatar'] ?? 'assets/models/avatar_default.glb',
+      status: map['status'] ?? 'playing',
       currentRound: map['currentRound'] ?? 1,
       p1Health: map['p1Health'] ?? 100,
       p2Health: map['p2Health'] ?? 100,
       p1Score: map['p1Score'] ?? 0,
       p2Score: map['p2Score'] ?? 0,
-      p1Answer: map['p1Answer'],
-      p1Time: map['p1Time'],
-      p2Answer: map['p2Answer'],
-      p2Time: map['p2Time'],
       currentQuestion: map['currentQuestion'],
+      p1Answer: map['p1Answer'],
+      p2Answer: map['p2Answer'],
+      p1Time: map['p1Time'],
+      p2Time: map['p2Time'],
     );
   }
 }
