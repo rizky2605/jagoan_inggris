@@ -56,8 +56,8 @@ class MatchService {
 
             String matchId = _db.collection('matches').doc().id; 
             
-            String oppAvatar = 'assets/models/avatar_default.glb';
-            try { oppAvatar = freshOpponent['avatarPath'] ?? 'assets/models/avatar_default.glb'; } catch (_) {}
+            String oppAvatar = 'assets/models/avatar.glb';
+            try { oppAvatar = freshOpponent['avatarPath'] ?? 'assets/models/avatar.glb'; } catch (_) {}
             String myAvatar = _getAvatarPath(user.equippedLoadout['body']);
 
             // Ambil soal unik pertama
@@ -101,7 +101,7 @@ class MatchService {
   String _getAvatarPath(String? itemId) {
     if (itemId == 'monster') return 'assets/models/monster.glb';
     if (itemId == 'teacher') return 'assets/models/teacher.glb';
-    return 'assets/models/avatar_default.glb';
+    return 'assets/models/avatar.glb';
   }
 
   Future<void> cancelSearch(String uid) async {
@@ -258,11 +258,16 @@ class MatchService {
         int s1 = data['p1Score'] ?? 0; int s2 = data['p2Score'] ?? 0;
         bool isP1 = (data['player1Uid'] == uid);
         bool userWon = false;
-        if (hp1 > hp2) userWon = isP1;
-        else if (hp2 > hp1) userWon = !isP1;
+        if (hp1 > hp2) {
+          userWon = isP1;
+        } else if (hp2 > hp1) userWon = !isP1;
         else if (s1 > s2) userWon = isP1;
         else userWon = !isP1; 
-        if (userWon) wins++; else losses++;
+        if (userWon) {
+          wins++;
+        } else {
+          losses++;
+        }
       }
       await _db.collection('users').doc(uid).update({'winCount': wins, 'lossCount': losses});
     } catch (e) { print("Sync Error: $e"); }

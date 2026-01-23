@@ -23,8 +23,15 @@ class UserModel {
 
   // --- 4. EKONOMI & KUSTOMISASI ---
   final int gold;
+  
+  // Struktur: {'body': 'monster', 'effect': 'fire'}
   final Map<String, dynamic> equippedLoadout; 
+  
+  // Item fisik (baju/avatar)
   final List<String> ownedItems; 
+  
+  // [BARU] Efek visual (fire, lightning, etc)
+  final List<String> unlockedEffects; 
 
   // --- 5. KOMPETITIF (MATCH & RANK) ---
   final int mmr;
@@ -53,12 +60,15 @@ class UserModel {
     this.dailyWordTarget = 10,
     this.dailyQuizScore = 0,
     this.gold = 500,
+    // Default loadout termasuk effect
     this.equippedLoadout = const {
       'body': 'avatar_default',
       'weapon': 'none',
-      'wings': 'none',
+      'effect': 'fire', // Default Effect
     },
     this.ownedItems = const ['avatar_default'], 
+    // Default unlocked effects
+    this.unlockedEffects = const ['fire'], 
     this.mmr = 1000,
     this.rankName = 'Bronze I',
     this.winCount = 0,
@@ -85,6 +95,7 @@ class UserModel {
     int? gold,
     Map<String, dynamic>? equippedLoadout,
     List<String>? ownedItems,
+    List<String>? unlockedEffects, // [BARU]
     int? mmr,
     String? rankName,
     int? winCount,
@@ -111,6 +122,7 @@ class UserModel {
       gold: gold ?? this.gold,
       equippedLoadout: equippedLoadout ?? this.equippedLoadout,
       ownedItems: ownedItems ?? this.ownedItems,
+      unlockedEffects: unlockedEffects ?? this.unlockedEffects, // [BARU]
       mmr: mmr ?? this.mmr,
       rankName: rankName ?? this.rankName,
       winCount: winCount ?? this.winCount,
@@ -121,9 +133,8 @@ class UserModel {
     );
   }
 
-  // --- CONVERT: FIRESTORE -> MODEL (FIXED KEYS) ---
+  // --- CONVERT: FIRESTORE -> MODEL ---
   factory UserModel.fromMap(Map<String, dynamic> data, String id) {
-    // Helper agar tidak error jika data double/null
     int toInt(dynamic val, int def) {
       if (val == null) return def;
       if (val is int) return val;
@@ -138,39 +149,40 @@ class UserModel {
       photoUrl: data['photoUrl'] ?? '',
       bio: data['bio'] ?? 'Jagoan Inggris siap bertarung!',
       
-      // Menggunakan key camelCase agar sesuai dengan MatchService
       level: toInt(data['level'], 1),
-      currentXp: toInt(data['currentXp'] ?? data['current_xp'], 0), // Support kedua format
-      maxXp: toInt(data['maxXp'] ?? data['max_xp'], 1000),
-      totalXp: toInt(data['totalXp'] ?? data['total_xp'], 0),
-      streakCount: toInt(data['streakCount'] ?? data['streak_count'], 0),
+      currentXp: toInt(data['currentXp'], 0),
+      maxXp: toInt(data['maxXp'], 1000),
+      totalXp: toInt(data['totalXp'], 0),
+      streakCount: toInt(data['streakCount'], 0),
       lastLogin: (data['lastLogin'] as Timestamp?)?.toDate(),
       
-      dailyWordCount: toInt(data['dailyWordCount'] ?? data['daily_word_count'], 0),
-      dailyWordTarget: toInt(data['dailyWordTarget'] ?? data['daily_word_target'], 10),
-      dailyQuizScore: toInt(data['dailyQuizScore'] ?? data['daily_quiz_score'], 0),
+      dailyWordCount: toInt(data['dailyWordCount'], 0),
+      dailyWordTarget: toInt(data['dailyWordTarget'], 10),
+      dailyQuizScore: toInt(data['dailyQuizScore'], 0),
 
       gold: toInt(data['gold'], 500),
-      equippedLoadout: Map<String, dynamic>.from(data['equippedLoadout'] ?? data['equipped_loadout'] ?? {
+      // [FIX] Ensure 'effect' exists in loadout
+      equippedLoadout: Map<String, dynamic>.from(data['equippedLoadout'] ?? {
         'body': 'avatar_default',
-        'weapon': null,
-        'wings': null
+        'weapon': 'none',
+        'effect': 'fire' 
       }),
-      ownedItems: List<String>.from(data['ownedItems'] ?? data['owned_items'] ?? ['avatar_default']),
+      ownedItems: List<String>.from(data['ownedItems'] ?? ['avatar_default']),
+      // [BARU] Load unlocked effects
+      unlockedEffects: List<String>.from(data['unlockedEffects'] ?? ['fire']),
       
-      // [FIX UTAMA] Pastikan ini membaca 'winCount' (camelCase)
       mmr: toInt(data['mmr'], 1000),
       rankName: data['rankName'] ?? 'Bronze I',
-      winCount: toInt(data['winCount'] ?? data['win_count'], 0), 
-      lossCount: toInt(data['lossCount'] ?? data['loss_count'], 0),
+      winCount: toInt(data['winCount'], 0), 
+      lossCount: toInt(data['lossCount'], 0),
       
-      lastCompletedLevel: toInt(data['lastCompletedLevel'] ?? data['last_completed_level'], 0),
+      lastCompletedLevel: toInt(data['lastCompletedLevel'], 0),
       unlockedMilestones: List<String>.from(data['unlockedMilestones'] ?? []),
       levelsProgress: Map<String, dynamic>.from(data['levelsProgress'] ?? {}),
     );
   }
 
-  // --- CONVERT: MODEL -> FIRESTORE (STANDARD CAMELCASE) ---
+  // --- CONVERT: MODEL -> FIRESTORE ---
   Map<String, dynamic> toMap() {
     return {
       'username': username,
@@ -192,11 +204,12 @@ class UserModel {
       'gold': gold,
       'equippedLoadout': equippedLoadout,
       'ownedItems': ownedItems,
+      'unlockedEffects': unlockedEffects, // [BARU] Simpan ke DB
       
       'mmr': mmr,
       'rankName': rankName,
-      'winCount': winCount,   // Konsisten camelCase
-      'lossCount': lossCount, // Konsisten camelCase
+      'winCount': winCount,
+      'lossCount': lossCount,
       
       'lastCompletedLevel': lastCompletedLevel,
       'unlockedMilestones': unlockedMilestones,

@@ -18,7 +18,6 @@ class FirestoreService {
         username: 'Jagoan Baru', 
         email: '', 
         photoUrl: '',
-        // Field lain menggunakan nilai default di UserModel
       );
     });
   }
@@ -40,18 +39,18 @@ class FirestoreService {
 
         Map<String, dynamic> data = snapshot.data() as Map<String, dynamic>;
 
-        // Ambil data dengan key snake_case
+        // Ambil data dengan key snake_case (pastikan konsisten dengan UserModel.toMap)
         int currentGold = (data['gold'] ?? 0).toInt();
-        int currentXp = (data['current_xp'] ?? 0).toInt(); 
-        int currentTotalXp = (data['total_xp'] ?? 0).toInt(); // [BARU] Ambil Total XP
+        int currentXp = (data['currentXp'] ?? data['current_xp'] ?? 0).toInt(); 
+        int currentTotalXp = (data['totalXp'] ?? data['total_xp'] ?? 0).toInt(); 
         int currentLevel = (data['level'] ?? 1).toInt();
-        int maxXp = (data['max_xp'] ?? 1000).toInt();
-        int lastCompleted = (data['last_completed_level'] ?? 0).toInt();
+        int maxXp = (data['maxXp'] ?? data['max_xp'] ?? 1000).toInt();
+        int lastCompleted = (data['lastCompletedLevel'] ?? data['last_completed_level'] ?? 0).toInt();
 
         // Hitung Data Baru
         int newGold = currentGold + goldGained;
         
-        // [BARU] Update Total XP (Akumulasi Seumur Hidup)
+        // Update Total XP (Akumulasi Seumur Hidup)
         int newTotalXp = currentTotalXp + xpGained;
 
         // Update Current XP (Untuk progress bar level ini)
@@ -72,14 +71,14 @@ class FirestoreService {
           newLastCompleted = currentLevelId;
         }
 
-        // Update ke Firestore
+        // Update ke Firestore (Gunakan camelCase sesuai UserModel toMap agar konsisten)
         transaction.update(userRef, {
           'gold': newGold,
-          'current_xp': accumulatedXp,
-          'max_xp': newMaxXp,
-          'total_xp': newTotalXp, // [BARU] Simpan Total XP
+          'currentXp': accumulatedXp,
+          'maxXp': newMaxXp,
+          'totalXp': newTotalXp,
           'level': newLevel,
-          'last_completed_level': newLastCompleted,
+          'lastCompletedLevel': newLastCompleted,
         });
       });
     } catch (e) {
@@ -96,11 +95,11 @@ class FirestoreService {
     Map<String, dynamic> updates = {};
     
     if (wordsLearned != null) {
-      updates['daily_word_count'] = FieldValue.increment(wordsLearned);
+      updates['dailyWordCount'] = FieldValue.increment(wordsLearned);
     }
     
     if (quizScore != null) {
-      updates['daily_quiz_score'] = quizScore;
+      updates['dailyQuizScore'] = quizScore;
     }
 
     if (updates.isNotEmpty) {
@@ -120,7 +119,7 @@ class FirestoreService {
       DateTime nextDate = DateTime.now().add(Duration(days: newInterval));
 
       await _db.collection('users').doc(uid).update({
-        'levels_progress.$levelId': {
+        'levelsProgress.$levelId': { // Gunakan camelCase
           'interval': newInterval,
           'nextReviewDate': nextDate.toIso8601String(),
           'lastReviewDate': DateTime.now().toIso8601String(),
@@ -132,8 +131,8 @@ class FirestoreService {
     }
   }
 
-  // --- 5. SHOP: BELI ITEM ---
-  Future<void> purchaseItem(String uid, String itemId, int price) async {
+  // --- 5. SHOP: BELI ITEM (SUPPORT EFEK) ---
+  Future<void> purchaseItem(String uid, String itemId, int price, {String? category}) async {
     DocumentReference userRef = _db.collection('users').doc(uid);
 
     await _db.runTransaction((transaction) async {
@@ -143,11 +142,14 @@ class FirestoreService {
       Map<String, dynamic> data = snapshot.data() as Map<String, dynamic>;
       int currentGold = (data['gold'] ?? 0).toInt();
       
-      List<dynamic> rawItems = data['owned_items'] ?? [];
-      List<String> ownedItems = List<String>.from(rawItems);
-
-      if (ownedItems.contains(itemId)) {
-        throw Exception("Barang sudah dimiliki!");
+      // Tentukan array tujuan berdasarkan kategori
+      String arrayField = (category == 'effect') ? 'unlockedEffects' : 'ownedItems';
+      // Support camelCase dan snake_case untuk kompatibilitas data lama
+      List<dynamic> currentItems = data[arrayField] ?? data[arrayField == 'unlockedEffects' ? 'unlocked_effects' : 'owned_items'] ?? [];
+      
+      if (currentItems.contains(itemId)) {
+        // Jika sudah punya, tidak perlu throw error, cukup return
+        return; 
       }
 
       if (currentGold < price) {
@@ -156,15 +158,16 @@ class FirestoreService {
 
       transaction.update(userRef, {
         'gold': currentGold - price,
-        'owned_items': FieldValue.arrayUnion([itemId]),
+        arrayField: FieldValue.arrayUnion([itemId]),
       });
     });
   }
 
   // --- 6. SHOP: EQUIP ITEM ---
   Future<void> equipItem(String uid, String category, String itemId) async {
+    // category bisa 'body', 'head', 'wings', 'effect'
     await _db.collection('users').doc(uid).update({
-      'equipped_loadout.$category': itemId,
+      'equippedLoadout.$category': itemId, // Gunakan camelCase
     });
   }
 
@@ -182,7 +185,6 @@ class FirestoreService {
   }
 
   // --- 8. CARI LAWAN (FALLBACK MATCHMAKING) ---
-  // Fungsi ini opsional jika sudah pakai MatchService, tapi berguna untuk tes
   Future<UserModel?> findOpponent(String myUid) async {
     try {
       QuerySnapshot snapshot = await _db.collection('users')

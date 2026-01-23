@@ -62,7 +62,6 @@ class _MainScreenState extends State<MainScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // [FIX] Warna Background disamakan dengan Story Screen
       backgroundColor: const Color(0xFF1E1E2C), 
       body: StreamBuilder<DocumentSnapshot>(
         stream: FirebaseFirestore.instance.collection('users').doc(uid).snapshots(),
@@ -83,7 +82,7 @@ class _MainScreenState extends State<MainScreen> {
 
           return Stack(
             children: [
-              // 1. BACKGROUND GLOBAL (Sama dengan Story Screen)
+              // 1. BACKGROUND GLOBAL
               Positioned.fill(
                 child: Container(
                   decoration: const BoxDecoration(
@@ -99,15 +98,18 @@ class _MainScreenState extends State<MainScreen> {
               // 2. LAYOUT UTAMA (ROW)
               Row(
                 children: [
-                  // --- SIDEBAR KIRI (Transparan & Indikator) ---
+                  // --- SIDEBAR KIRI (SELALU MUNCUL) ---
                   _buildRefinedSidebar(user),
 
                   // --- KONTEN KANAN ---
                   Expanded(
                     child: Column(
                       children: [
-                        // HEADER TRANSPARAN (Tanpa Username)
-                        _buildHeaderNoName(user), 
+                        // [PERBAIKAN UTAMA DISINI]
+                        // Header Atas HANYA muncul jika BUKAN index 2 (MatchScreen)
+                        // Jadi saat index == 2 (Match), header ini hilang, sisa Navbar kiri saja.
+                        if (_selectedIndex != 2)
+                          _buildHeaderNoName(user), 
                         
                         // HALAMAN UTAMA
                         Expanded(child: pages[_selectedIndex]),
@@ -124,15 +126,14 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   // ===========================================================================
-  // WIDGETS UI (FINAL REVISION)
+  // WIDGETS UI
   // ===========================================================================
 
-  // 1. SIDEBAR KIRI (Lebih Bening & Ada Indikator)
+  // 1. SIDEBAR KIRI
   Widget _buildRefinedSidebar(UserModel user) {
     return Container(
       width: 72, 
       decoration: BoxDecoration(
-        // Opacity dikurangi jadi 0.2 agar tidak terlalu pekat
         color: Colors.black.withOpacity(0.2), 
         border: const Border(right: BorderSide(color: Colors.white10, width: 1)),
       ),
@@ -148,7 +149,7 @@ class _MainScreenState extends State<MainScreen> {
               
               const Spacer(), 
               
-              // B. MENU NAVIGASI (Dengan Indikator Garis)
+              // B. MENU NAVIGASI
               Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -175,7 +176,7 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-  // 2. HEADER ATAS (Tanpa Nama User)
+  // 2. HEADER ATAS (Info Level, XP, Gold)
   Widget _buildHeaderNoName(UserModel user) {
     double xpProgress = user.maxXp > 0 ? (user.currentXp / user.maxXp).clamp(0.0, 1.0) : 0.0;
 
@@ -262,7 +263,6 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-  // Item Navigasi dengan Garis Samping
   Widget _buildNavItemWithLine(int index, IconData icon, String label) {
     bool isSelected = _selectedIndex == index;
     
@@ -273,14 +273,14 @@ class _MainScreenState extends State<MainScreen> {
         height: 55, 
         color: Colors.transparent,
         child: Stack(
-          alignment: Alignment.centerLeft, // Align left untuk garis
+          alignment: Alignment.centerLeft, 
           children: [
-            // A. GARIS INDIKATOR (Muncul hanya jika selected)
+            // A. GARIS INDIKATOR
             AnimatedPositioned(
               duration: const Duration(milliseconds: 200),
               curve: Curves.easeOut,
               left: 0,
-              top: isSelected ? 12 : 27, // Animasi tinggi
+              top: isSelected ? 12 : 27, 
               bottom: isSelected ? 12 : 27,
               child: Container(
                 width: 3, 
@@ -292,7 +292,7 @@ class _MainScreenState extends State<MainScreen> {
               ),
             ),
 
-            // B. IKON DAN LABEL (Centered)
+            // B. IKON DAN LABEL
             Center(
               child: AnimatedScale(
                 scale: isSelected ? 1.1 : 1.0,

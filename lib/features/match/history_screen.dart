@@ -64,8 +64,9 @@ class HistoryScreen extends StatelessWidget {
 
                 // Tentukan Menang/Kalah (Sesuai Logic Service)
                 bool isWin = false;
-                if (myHp > oppHp) isWin = true;
-                else if (myHp == oppHp && myScore > oppScore) isWin = true;
+                if (myHp > oppHp) {
+                  isWin = true;
+                } else if (myHp == oppHp && myScore > oppScore) isWin = true;
                 
                 Color resultColor = isWin ? Colors.greenAccent : Colors.redAccent;
 
