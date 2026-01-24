@@ -28,9 +28,9 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/models/avatar_default.glb
+    - assets/models/monster1.glb
     - assets/models/teacher.glb
-    - assets/models/avatar.glb
+    - assets/models/avatar1.glb
     - assets/images/icon_body.png
     - assets/images/icon_wings.png
     - assets/images/icon_weapon.png

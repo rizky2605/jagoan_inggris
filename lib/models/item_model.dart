@@ -50,7 +50,7 @@ final List<ItemModel> shopCatalog = [
     category: ItemCategory.body, // [FIX] Pakai Enum
     rarity: ItemRarity.common,
     price: 0, 
-    assetPath: 'assets/models/avatar.glb'
+    assetPath: 'assets/models/avatar1.glb'
   ),
   ItemModel(
     id: 'wizard_robe', 

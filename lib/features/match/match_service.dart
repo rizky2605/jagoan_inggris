@@ -56,8 +56,8 @@ class MatchService {
 
             String matchId = _db.collection('matches').doc().id; 
             
-            String oppAvatar = 'assets/models/avatar.glb';
-            try { oppAvatar = freshOpponent['avatarPath'] ?? 'assets/models/avatar.glb'; } catch (_) {}
+            String oppAvatar = 'assets/models/avatar1.glb';
+            try { oppAvatar = freshOpponent['avatarPath'] ?? 'assets/models/avatar1.glb'; } catch (_) {}
             String myAvatar = _getAvatarPath(user.equippedLoadout['body']);
 
             // Ambil soal unik pertama
@@ -101,7 +101,7 @@ class MatchService {
   String _getAvatarPath(String? itemId) {
     if (itemId == 'monster') return 'assets/models/monster.glb';
     if (itemId == 'teacher') return 'assets/models/teacher.glb';
-    return 'assets/models/avatar.glb';
+    return 'assets/models/avatar1.glb';
   }
 
   Future<void> cancelSearch(String uid) async {

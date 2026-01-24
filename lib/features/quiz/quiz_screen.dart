@@ -237,7 +237,7 @@ class _QuizScreenState extends State<QuizScreen> {
                       // KIRI: PLAYER
                       Expanded(
                         flex: 2,
-                        child: _buildCharacterStats(widget.user.username, _playerHealth, 'assets/models/avatar_default.glb', cyanNeon),
+                        child: _buildCharacterStats(widget.user.username, _playerHealth, 'assets/models/avatar1.glb', cyanNeon),
                       ),
 
                       // TENGAH: SOAL
@@ -277,7 +277,7 @@ class _QuizScreenState extends State<QuizScreen> {
                         child: _buildCharacterStats(
                           widget.opponentName ?? "MONSTER", 
                           _monsterHealth, 
-                          widget.opponentName != null ? 'assets/models/avatar_default.glb' : 'assets/models/monster.glb', 
+                          widget.opponentName != null ? 'assets/models/avatar1.glb' : 'assets/models/monster1.glb', 
                           Colors.redAccent
                         ),
                       ),

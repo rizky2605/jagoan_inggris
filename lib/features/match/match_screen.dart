@@ -168,8 +168,8 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
               if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
               UserModel myUser = snapshot.data!;
               
-              String myAvatarPath = 'assets/models/avatar.glb'; 
-              if (myUser.equippedLoadout['body'] == 'monster') myAvatarPath = 'assets/models/monster.glb';
+              String myAvatarPath = 'assets/models/avatar1.glb'; 
+              if (myUser.equippedLoadout['body'] == 'monster') myAvatarPath = 'assets/models/monster1.glb';
               if (myUser.equippedLoadout['body'] == 'teacher') myAvatarPath = 'assets/models/teacher.glb';
 
               return SafeArea(
@@ -201,7 +201,7 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
                                   Expanded(child: _buildAvatarCard(
                                     "LAWAN", 
                                     _foundOpponentData?['name'] ?? "???", 
-                                    _foundOpponentData?['avatarPath'] ?? 'assets/models/avatar.glb', 
+                                    _foundOpponentData?['avatarPath'] ?? 'assets/models/avatar1.glb', 
                                     _foundOpponentData?['photoUrl'] ?? '', 
                                     isPlayer: false, isFound: _foundOpponentData != null
                                   )),
@@ -276,15 +276,14 @@ class _MatchScreenState extends State<MatchScreen> with TickerProviderStateMixin
             Padding(
               padding: const EdgeInsets.only(bottom: 40), 
               child: ModelViewer(
-                key: ValueKey('lobby_idle_$avatar3d'), 
+                key: ValueKey('lobby_stay_$avatar3d'), 
                 src: avatar3d, 
-                animationName: 'idle', 
+                animationName: 'stay', 
                 autoPlay: true, 
                 autoRotate: false, 
                 cameraControls: false, 
                 backgroundColor: Colors.transparent, 
-                disableZoom: true, 
-                cameraTarget: "0.0m 0.5m 0m",
+                disableZoom: true,
                 exposure: 8
               )
             )

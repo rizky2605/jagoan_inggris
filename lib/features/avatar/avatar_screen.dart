@@ -38,10 +38,10 @@ class _AvatarScreenState extends State<AvatarScreen> with SingleTickerProviderSt
       var item = shopCatalog.firstWhere((i) => i.id == id && i.category == cat);
       return item.assetPath;
     } catch (e) {
-      if (cat == ItemCategory.body) return 'assets/models/avatar.glb';
+      if (cat == ItemCategory.body) return 'assets/models/avatar1.glb';
       if (cat == ItemCategory.head) return ''; 
       if (cat == ItemCategory.wings) return ''; 
-      if (cat == ItemCategory.effect) return 'https://lottie.host/98205738-9999-4444-8888-123456789012/fireball.json';
+      if (cat == ItemCategory.effect) return 'assets/effects/fire.json';
       return '';
     }
   }
@@ -97,7 +97,7 @@ class _AvatarScreenState extends State<AvatarScreen> with SingleTickerProviderSt
                       ModelViewer(
                         key: ValueKey('preview_$_previewBody'), 
                         src: _getAssetPath(_previewBody!, ItemCategory.body), 
-                        animationName: 'idle', 
+                        animationName: 'stay', 
                         autoPlay: true,
                         autoRotate: true,
                         cameraControls: true, 
@@ -105,8 +105,7 @@ class _AvatarScreenState extends State<AvatarScreen> with SingleTickerProviderSt
                         exposure: 8,
                         disableZoom: true,
                         minCameraOrbit: "auto 90deg auto", 
-                        maxCameraOrbit: "auto 90deg auto",
-                        cameraTarget: "0.0m 0.5m 0m",
+                        maxCameraOrbit: "auto 90deg auto"
                       ),
 
                       if (_previewEffect != null)
@@ -242,8 +241,9 @@ class _AvatarScreenState extends State<AvatarScreen> with SingleTickerProviderSt
     if (item.category == ItemCategory.effect && _previewEffect == item.id) isPreviewing = true;
 
     Color themeColor = item.rarityColor.withValues(alpha: 0.3);
-    if (isEquipped) themeColor = Colors.greenAccent.withValues(alpha: 0.5);
-    else if (isPreviewing) themeColor = Colors.amber.withValues(alpha: 0.5);
+    if (isEquipped) {
+      themeColor = Colors.greenAccent.withValues(alpha: 0.5);
+    } else if (isPreviewing) themeColor = Colors.amber.withValues(alpha: 0.5);
 
     return GestureDetector(
       onTap: () {

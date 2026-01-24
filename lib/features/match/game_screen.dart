@@ -42,7 +42,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
   // Magic Effect State
   String _myMagicType = 'fire'; 
-  String _oppMagicType = 'lightning'; 
+  final String _oppMagicType = 'lightning'; 
   bool _showMyHitEffect = false; 
   bool _showOppHitEffect = false; 
 
@@ -204,8 +204,11 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     _gameTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted) return;
       setState(() {
-        if (_timeLeft > 0) _timeLeft--;
-        else timer.cancel();
+        if (_timeLeft > 0) {
+          _timeLeft--;
+        } else {
+          timer.cancel();
+        }
       });
     });
   }
