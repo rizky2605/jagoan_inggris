@@ -104,7 +104,7 @@ class _AvatarScreenState extends State<AvatarScreen> with SingleTickerProviderSt
                       ModelViewer(
                         key: ValueKey(currentAvatarPath), 
                         src: currentAvatarPath, 
-                        animationName: 'stay', 
+                        animationName: 'stay',
                         autoPlay: true,
                         autoRotate: true,
                         cameraControls: true, 

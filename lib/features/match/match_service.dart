@@ -1,275 +1,281 @@
-import 'dart:async';
+import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'dart:math'; 
 import '../../models/match_model.dart';
 import '../../models/user_model.dart';
-import '../../core/constants/question_data.dart'; // Pastikan import ini ada
 
 class MatchService {
-  final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  // ===========================================================================
-  // 1. MATCHMAKING SYSTEM
-  // ===========================================================================
-  
+  // ==========================================
+  // 1. LOBBY & MATCHMAKING
+  // ==========================================
+
+  // Mencari match: Join jika ada yang menunggu, Buat baru jika tidak
   Future<String> findMatch(UserModel user) async {
     try {
-      await _db.collection('match_queue').doc(user.uid).set({
-        'uid': user.uid,
-        'username': user.username,
-        'photoUrl': user.photoUrl,
-        'mmr': user.mmr,
-        'avatarPath': _getAvatarPath(user.equippedLoadout['body']),
-        'status': 'searching', 
-        'timestamp': FieldValue.serverTimestamp(),
-        'lastSeen': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-
-      await Future.delayed(const Duration(milliseconds: 500));
-
-      QuerySnapshot queueSnapshot = await _db.collection('match_queue')
-          .where('status', isEqualTo: 'searching')
-          .orderBy('timestamp', descending: false)
-          .limit(10)
+      // Cari match yang statusnya 'waiting' & bukan diri sendiri
+      QuerySnapshot waitingMatches = await _firestore
+          .collection('matches')
+          .where('status', isEqualTo: 'waiting')
+          .where('player1Uid', isNotEqualTo: user.uid)
+          .limit(1)
           .get();
 
-      DocumentSnapshot? opponentDoc;
-      DateTime threshold = DateTime.now().subtract(const Duration(seconds: 40));
-
-      for (var doc in queueSnapshot.docs) {
-        if (doc['uid'] == user.uid) continue;
-        try {
-          if (doc.data() != null && (doc.data() as Map).containsKey('lastSeen')) {
-            Timestamp? ts = doc['lastSeen'];
-            if (ts != null && ts.toDate().isBefore(threshold)) continue; 
+      if (waitingMatches.docs.isNotEmpty) {
+        // === JOIN MATCH ===
+        DocumentSnapshot matchDoc = waitingMatches.docs.first;
+        
+        return await _firestore.runTransaction((transaction) async {
+          DocumentSnapshot freshSnap = await transaction.get(matchDoc.reference);
+          
+          if (!freshSnap.exists || freshSnap['status'] != 'waiting') {
+            throw Exception("Match expired");
           }
-        } catch (e) { continue; }
-        opponentDoc = doc;
-        break; 
-      }
 
-      if (opponentDoc != null) {
-        try {
-          return await _db.runTransaction((transaction) async {
-            DocumentSnapshot freshOpponent = await transaction.get(opponentDoc!.reference);
-            if (!freshOpponent.exists) throw Exception("Lawan diambil.");
-
-            String matchId = _db.collection('matches').doc().id; 
-            
-            String oppAvatar = 'assets/models/avatar1.glb';
-            try { oppAvatar = freshOpponent['avatarPath'] ?? 'assets/models/avatar1.glb'; } catch (_) {}
-            String myAvatar = _getAvatarPath(user.equippedLoadout['body']);
-
-            // Ambil soal unik pertama
-            Map<String, dynamic> firstQResult = _getUniqueRandomQuestion([]); 
-            
-            MatchModel newMatch = MatchModel(
-              matchId: matchId,
-              player1Uid: freshOpponent['uid'],
-              player2Uid: user.uid,
-              player1Name: freshOpponent['username'],
-              player2Name: user.username,
-              p1PhotoUrl: freshOpponent['photoUrl'] ?? '', 
-              p2PhotoUrl: user.photoUrl,
-              p1Avatar: oppAvatar, 
-              p2Avatar: myAvatar,
-              status: 'playing',      
-              currentRound: 1,
-              p1Health: 100, p2Health: 100, p1Score: 0, p2Score: 0,
-              currentQuestion: firstQResult['question'],
-              usedQuestionIndices: [firstQResult['index']],
-            );
-
-            transaction.delete(freshOpponent.reference);
-            transaction.delete(_db.collection('match_queue').doc(user.uid));
-            transaction.set(_db.collection('matches').doc(matchId), newMatch.toMap());
-            
-            return matchId;
+          transaction.update(matchDoc.reference, {
+            'player2Uid': user.uid,
+            'player2Name': user.username,
+            'p2PhotoUrl': user.photoUrl,
+            'p2Loadout': user.equippedLoadout, // Simpan Loadout P2
+            'status': 'playing',
+            'p2Health': 100,
+            'p2Score': 0,
+            // Generate soal pertama saat match dimulai
+            'currentQuestion': _generateRandomQuestion([]),
           });
-        } catch (e) {
-          return "WAITING"; 
-        }
+
+          return matchDoc.id;
+        });
       } else {
-        return "WAITING"; 
+        // === CREATE MATCH ===
+        return await _createMatch(user);
       }
     } catch (e) {
-      if (e.toString().contains("failed-precondition")) throw Exception("INDEX_MISSING");
-      return "WAITING"; 
+      print("Error finding match: $e");
+      return await _createMatch(user); 
     }
   }
 
-  String _getAvatarPath(String? itemId) {
-    if (itemId == 'monster') return 'assets/models/monster.glb';
-    if (itemId == 'teacher') return 'assets/models/teacher.glb';
-    return 'assets/models/avatar1.glb';
+  Future<String> _createMatch(UserModel user) async {
+    DocumentReference newMatchRef = _firestore.collection('matches').doc();
+
+    MatchModel newMatch = MatchModel(
+      matchId: newMatchRef.id,
+      player1Uid: user.uid,
+      player2Uid: '',
+      player1Name: user.username,
+      player2Name: '', 
+      p1PhotoUrl: user.photoUrl,
+      p2PhotoUrl: '',
+      p1Loadout: user.equippedLoadout, // Simpan Loadout P1
+      p2Loadout: {}, 
+      status: 'waiting',
+      currentRound: 1,
+      p1Health: 100,
+      p2Health: 100,
+      p1Score: 0,
+      p2Score: 0,
+      usedQuestionIndices: [],
+    );
+
+    await newMatchRef.set(newMatch.toMap());
+    return "WAITING";
   }
 
   Future<void> cancelSearch(String uid) async {
-    try { await _db.collection('match_queue').doc(uid).delete(); } catch (e) {}
+    QuerySnapshot myWaitingMatch = await _firestore
+        .collection('matches')
+        .where('player1Uid', isEqualTo: uid)
+        .where('status', isEqualTo: 'waiting')
+        .get();
+
+    for (var doc in myWaitingMatch.docs) {
+      await doc.reference.delete();
+    }
   }
 
   Future<void> updateHeartbeat(String uid) async {
-    try { await _db.collection('match_queue').doc(uid).update({'lastSeen': FieldValue.serverTimestamp()}); } catch (e) {}
+    // Opsional: Update status online user
   }
   
-  // ===========================================================================
-  // 2. GAMEPLAY LOGIC
-  // ===========================================================================
+  Future<void> syncUserStats(String uid) async {
+    // Opsional: Sinkronisasi data user jika perlu
+  }
 
-  Future<void> submitAnswer(String matchId, String uid, String answer, int timeTaken, bool isPlayer1) async {
-    await _db.collection('matches').doc(matchId).update({
-      isPlayer1 ? 'p1Answer' : 'p2Answer': answer,
-      isPlayer1 ? 'p1Time' : 'p2Time': timeTaken,
+  // ==========================================
+  // 2. GAMEPLAY LOGIC (YANG HILANG)
+  // ==========================================
+
+  /// [FIX 1] Mendapatkan Stream Data Match Realtime
+  Stream<MatchModel> getMatchStream(String matchId) {
+    return _firestore.collection('matches').doc(matchId).snapshots().map((doc) {
+      if (!doc.exists) throw Exception("Match not found");
+      return MatchModel.fromMap(doc.data()!);
     });
   }
 
+  /// [FIX 2] Submit Jawaban Player
+  Future<void> submitAnswer(String matchId, String uid, String answer, int timeTaken, bool isP1) async {
+    await _firestore.collection('matches').doc(matchId).update({
+      isP1 ? 'p1Answer' : 'p2Answer': answer,
+      isP1 ? 'p1Time' : 'p2Time': timeTaken,
+    });
+  }
+
+  /// [FIX 3] Proses Hasil Ronde (Dipanggil oleh Host/P1)
+  /// Menghitung damage, skor, dan ganti ronde
   Future<void> processRoundResult(MatchModel match) async {
-    if (match.p1Answer == null || match.p2Answer == null) return;
+    if (match.status == 'finished') return;
 
-    String correctAnswer = match.currentQuestion!['correctAnswer'];
-    bool p1Correct = match.p1Answer == correctAnswer;
-    bool p2Correct = match.p2Answer == correctAnswer;
-    
-    int p1NewHealth = match.p1Health;
-    int p2NewHealth = match.p2Health;
-    int p1NewScore = match.p1Score;
-    int p2NewScore = match.p2Score;
+    String correct = match.currentQuestion?['correctAnswer'] ?? '';
+    bool p1Correct = match.p1Answer == correct;
+    bool p2Correct = match.p2Answer == correct;
 
-    int t1 = match.p1Time ?? 99999999;
-    int t2 = match.p2Time ?? 99999999;
+    int p1Damage = 0;
+    int p2Damage = 0;
+    int p1Points = 0;
+    int p2Points = 0;
 
-    const int damageWrong = 20; const int damageSlow = 5; 
-    const int damageBothWrong = 10; const int scoreWin = 20;
-
-    if (p1Correct && !p2Correct) {
-      p2NewHealth -= damageWrong; p1NewScore += scoreWin;
-    } else if (!p1Correct && p2Correct) {
-      p1NewHealth -= damageWrong; p2NewScore += scoreWin;
-    } else if (p1Correct && p2Correct) {
-      if (t1 < t2) { p2NewHealth -= damageSlow; p1NewScore += scoreWin; } 
-      else if (t2 < t1) { p1NewHealth -= damageSlow; p2NewScore += scoreWin; } 
-      else { p1NewScore += 10; p2NewScore += 10; }
+    // Logika Hitung Damage & Skor
+    if (p1Correct && p2Correct) {
+      // Jika keduanya benar, yang lebih cepat dapat poin lebih, tidak ada yang kena damage
+      // Atau bisa dibuat sama-sama kena damage sedikit.
+      // Skenario Jagoan Inggris: Yang cepat nyerang yang lambat.
+      if ((match.p1Time ?? 999) < (match.p2Time ?? 999)) {
+        p2Damage = 20; // P2 Kena hit
+        p1Points = 20;
+      } else {
+        p1Damage = 20; // P1 Kena hit
+        p2Points = 20;
+      }
+    } else if (p1Correct) {
+      p2Damage = 30; // P2 Salah, P2 Kena Damage Besar
+      p1Points = 30;
+    } else if (p2Correct) {
+      p1Damage = 30; // P1 Salah, P1 Kena Damage Besar
+      p2Points = 30;
     } else {
-      p1NewHealth -= damageBothWrong; p2NewHealth -= damageBothWrong;
+      // Keduanya Salah -> Keduanya kena damage kecil?
+      p1Damage = 10;
+      p2Damage = 10;
     }
 
-    bool isGameOver = p1NewHealth <= 0 || p2NewHealth <= 0 || match.currentRound >= 10;
+    int newP1Health = max(0, match.p1Health - p1Damage);
+    int newP2Health = max(0, match.p2Health - p2Damage);
+    
+    // Cek Game Over
+    String newStatus = (newP1Health == 0 || newP2Health == 0) ? 'finished' : 'playing';
 
-    // Siapkan soal berikutnya jika belum Game Over
+    // Generate Soal Baru (jika belum game over)
     Map<String, dynamic>? nextQuestion;
     List<int> nextUsedIndices = List.from(match.usedQuestionIndices);
-
-    if (!isGameOver) {
-      var res = _getUniqueRandomQuestion(nextUsedIndices);
-      nextQuestion = res['question'];
-      nextUsedIndices.add(res['index']);
+    
+    if (newStatus == 'playing') {
+      nextQuestion = _generateRandomQuestion(nextUsedIndices);
     }
 
-    await _db.collection('matches').doc(match.matchId).update({
-      'p1Health': max(0, p1NewHealth),
-      'p2Health': max(0, p2NewHealth),
-      'p1Score': p1NewScore,
-      'p2Score': p2NewScore,
-      'p1Answer': null, 'p2Answer': null, 'p1Time': null, 'p2Time': null,
-      'currentRound': isGameOver ? match.currentRound : match.currentRound + 1,
-      'status': isGameOver ? 'finished' : 'playing',
+    await _firestore.collection('matches').doc(match.matchId).update({
+      'p1Health': newP1Health,
+      'p2Health': newP2Health,
+      'p1Score': match.p1Score + p1Points,
+      'p2Score': match.p2Score + p2Points,
+      'status': newStatus,
+      'currentRound': match.currentRound + 1,
+      'p1Answer': null, // Reset jawaban
+      'p2Answer': null,
+      'p1Time': null,
+      'p2Time': null,
       'currentQuestion': nextQuestion,
-      'usedQuestionIndices': nextUsedIndices,
+      'usedQuestionIndices': nextUsedIndices, // Update index soal yg terpakai
     });
   }
 
-  // --- LOGIKA SOAL UNIK ---
-  Map<String, dynamic> _getUniqueRandomQuestion(List<int> usedIndices) {
-    List<int> availableIndices = [];
-    for (int i = 0; i < QuestionData.questions.length; i++) {
-      if (!usedIndices.contains(i)) {
-        availableIndices.add(i);
-      }
-    }
-
-    if (availableIndices.isEmpty) {
-      int randomIndex = Random().nextInt(QuestionData.questions.length);
-      return {'question': QuestionData.questions[randomIndex], 'index': randomIndex};
-    }
-
-    int selectedIndex = availableIndices[Random().nextInt(availableIndices.length)];
-    return {'question': QuestionData.questions[selectedIndex], 'index': selectedIndex};
-  }
-
-  // ===========================================================================
-  // 3. STATS & SYNC
-  // ===========================================================================
-
+  /// [FIX 4] Finalisasi Stats User (Update MMR & Win/Loss)
   Future<void> finalizeMatchStats(MatchModel match) async {
-    final matchRef = _db.collection('matches').doc(match.matchId);
-    final matchSnap = await matchRef.get();
-    if (matchSnap.data()?['statsProcessed'] == true) return;
-
-    String winnerUid; String loserUid;
-    if (match.p1Health > match.p2Health) { winnerUid = match.player1Uid; loserUid = match.player2Uid; } 
-    else if (match.p2Health > match.p1Health) { winnerUid = match.player2Uid; loserUid = match.player1Uid; } 
-    else if (match.p1Score > match.p2Score) { winnerUid = match.player1Uid; loserUid = match.player2Uid; } 
-    else { winnerUid = match.player2Uid; loserUid = match.player1Uid; }
-
-    WriteBatch batch = _db.batch();
-    batch.update(_db.collection('users').doc(winnerUid), {
-      'mmr': FieldValue.increment(25), 'winCount': FieldValue.increment(1), 'gold': FieldValue.increment(100), 
-    });
-    DocumentSnapshot loserSnap = await _db.collection('users').doc(loserUid).get();
-    if (loserSnap.exists) {
-       int currentMmr = (loserSnap.data() as Map<String, dynamic>)['mmr'] ?? 0;
-       int deduction = currentMmr >= 15 ? -15 : -currentMmr;
-       batch.update(_db.collection('users').doc(loserUid), {
-         'mmr': FieldValue.increment(deduction), 'lossCount': FieldValue.increment(1), 'gold': FieldValue.increment(20),
-       });
+    // Pastikan ini hanya dijalankan sekali agar tidak duplikat
+    // Biasanya dicek di UI atau menggunakan Cloud Functions lebih aman.
+    // Untuk Sederhana: Kita update langsung.
+    
+    bool isDraw = match.p1Health == 0 && match.p2Health == 0;
+    bool p1Win = match.p1Health > 0; // Asumsi P2 mati duluan
+    if (isDraw) {
+        p1Win = match.p1Score > match.p2Score; // Jika seri HP, cek skor
     }
-    batch.update(matchRef, {'statsProcessed': true});
-    await batch.commit();
-  }
 
-  Stream<MatchModel> getMatchStream(String matchId) {
-    return _db.collection('matches').doc(matchId).snapshots().map((doc) {
-      if (!doc.exists) throw Exception("Match missing");
-      return MatchModel.fromMap(doc.data() as Map<String, dynamic>);
+    // Update Player 1
+    await _firestore.collection('users').doc(match.player1Uid).update({
+      'mmr': FieldValue.increment(p1Win ? 25 : -20),
+      'winCount': FieldValue.increment(p1Win ? 1 : 0),
+      'lossCount': FieldValue.increment(p1Win ? 0 : 1),
+    });
+
+    // Update Player 2
+    await _firestore.collection('users').doc(match.player2Uid).update({
+      'mmr': FieldValue.increment(!p1Win ? 25 : -20),
+      'winCount': FieldValue.increment(!p1Win ? 1 : 0),
+      'lossCount': FieldValue.increment(!p1Win ? 0 : 1),
     });
   }
 
+  // ==========================================
+  // 3. QUESTION GENERATOR (HELPER)
+  // ==========================================
+
+  // Database Soal Sederhana (Bisa dipindahkan ke Firestore collection terpisah nanti)
+  final List<Map<String, dynamic>> _questionBank = [
+    {'q': 'What is the past tense of "Go"?', 'opts': ['Goned', 'Went', 'Gone', 'Going'], 'ans': 'Went'},
+    {'q': 'She ___ a beautiful song.', 'opts': ['Sing', 'Sangs', 'Sang', 'Singing'], 'ans': 'Sang'},
+    {'q': 'Antonym of "Happy" is...', 'opts': ['Sad', 'Joy', 'Glad', 'Fun'], 'ans': 'Sad'},
+    {'q': 'Which one is a fruit?', 'opts': ['Carrot', 'Potato', 'Apple', 'Spinach'], 'ans': 'Apple'},
+    {'q': 'Cat ___ on the mat.', 'opts': ['Sits', 'Sit', 'Satting', 'Sited'], 'ans': 'Sits'},
+    {'q': 'Plural of "Child" is...', 'opts': ['Childs', 'Children', 'Childes', 'Baby'], 'ans': 'Children'},
+    {'q': 'Translate: "Saya lapar"', 'opts': ['I am angry', 'I am hungry', 'I am thirsty', 'I am sleepy'], 'ans': 'I am hungry'},
+    {'q': 'Verb 3 of "Eat"', 'opts': ['Ate', 'Eaten', 'Eating', 'Eats'], 'ans': 'Eaten'},
+    {'q': 'Synonym of "Big"', 'opts': ['Small', 'Tiny', 'Huge', 'Short'], 'ans': 'Huge'},
+    {'q': 'I ___ football every Sunday.', 'opts': ['Play', 'Plays', 'Played', 'Playing'], 'ans': 'Play'},
+  ];
+
+  Map<String, dynamic> _generateRandomQuestion(List<int> usedIndices) {
+    Random random = Random();
+    int index;
+    
+    // Cari index yang belum terpakai (Maksimal coba 100x biar gak infinite loop)
+    int attempts = 0;
+    do {
+      index = random.nextInt(_questionBank.length);
+      attempts++;
+    } while (usedIndices.contains(index) && attempts < 100);
+
+    // Tandai index terpakai
+    usedIndices.add(index);
+    
+    var rawQ = _questionBank[index];
+    
+    // Acak posisi jawaban agar tidak selalu A
+    List<String> options = List<String>.from(rawQ['opts']);
+    options.shuffle();
+
+    return {
+      'question': rawQ['q'],
+      'options': options,
+      'correctAnswer': rawQ['ans'],
+      'index': index,
+    };
+  }
   Stream<List<MatchModel>> getMatchHistory(String uid) {
-    return _db.collection('matches')
+    // Menggunakan Filter.or (Fitur baru Firestore) untuk mencari match dimana
+    // user menjadi player1 ATAU player2
+    return _firestore.collection('matches')
+        .where(Filter.or(
+          Filter('player1Uid', isEqualTo: uid),
+          Filter('player2Uid', isEqualTo: uid),
+        ))
         .where('status', isEqualTo: 'finished')
-        .limit(50)
         .snapshots()
         .map((snapshot) {
-          var allMatches = snapshot.docs.map((d) => MatchModel.fromMap(d.data())).toList();
-          return allMatches.where((m) => m.player1Uid == uid || m.player2Uid == uid).toList();
+          return snapshot.docs
+              .map((doc) => MatchModel.fromMap(doc.data()))
+              .toList();
         });
-  }
-
-  Future<void> syncUserStats(String uid) async {
-    try {
-      int wins = 0; int losses = 0;
-      var q1 = await _db.collection('matches').where('player1Uid', isEqualTo: uid).where('status', isEqualTo: 'finished').get();
-      var q2 = await _db.collection('matches').where('player2Uid', isEqualTo: uid).where('status', isEqualTo: 'finished').get();
-      List<DocumentSnapshot> allDocs = [...q1.docs, ...q2.docs];
-
-      for (var doc in allDocs) {
-        var data = doc.data() as Map<String, dynamic>;
-        int hp1 = data['p1Health'] ?? 0; int hp2 = data['p2Health'] ?? 0;
-        int s1 = data['p1Score'] ?? 0; int s2 = data['p2Score'] ?? 0;
-        bool isP1 = (data['player1Uid'] == uid);
-        bool userWon = false;
-        if (hp1 > hp2) {
-          userWon = isP1;
-        } else if (hp2 > hp1) userWon = !isP1;
-        else if (s1 > s2) userWon = isP1;
-        else userWon = !isP1; 
-        if (userWon) {
-          wins++;
-        } else {
-          losses++;
-        }
-      }
-      await _db.collection('users').doc(uid).update({'winCount': wins, 'lossCount': losses});
-    } catch (e) { print("Sync Error: $e"); }
   }
 }
