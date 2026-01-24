@@ -11,12 +11,21 @@ dependencies:
   flutter:
     sdk: flutter
 
+  # Animasi (JSON)
   lottie: ^3.1.0
+  
+  # Ikon iOS style
   cupertino_icons: ^1.0.8
+  
+  # Firebase
   firebase_core: ^4.3.0
   firebase_auth: ^6.1.3
   cloud_firestore: ^6.1.1
+  
+  # 3D Viewer (GLB)
   model_viewer_plus: ^1.7.0 
+  
+  # Font Google
   google_fonts: ^8.0.0
 
 dev_dependencies:
@@ -27,11 +36,9 @@ dev_dependencies:
 flutter:
   uses-material-design: true
 
+  # [PENTING] Pendaftaran Aset
+  # Gunakan nama folder (diakhiri /) agar semua file di dalamnya terbaca.
   assets:
-    - assets/models/monster1.glb
-    - assets/models/teacher.glb
-    - assets/models/avatar1.glb
-    - assets/images/icon_body.png
-    - assets/images/icon_wings.png
-    - assets/images/icon_weapon.png
-    - assets/effects/
+    - assets/images/          # Untuk icon_body.png, dll (jika ada)
+    - assets/models/          # Mendaftarkan SEMUA file .glb (termasuk 8 file avatar, teacher, monster)
+    - assets/effects/         # Mendaftarkan SEMUA file .json (fire.json, lightning.json)

@@ -24,13 +24,19 @@ class UserModel {
   // --- 4. EKONOMI & KUSTOMISASI ---
   final int gold;
   
-  // Struktur: {'body': 'monster', 'effect': 'fire'}
+  // Struktur Loadout:
+  // {
+  //   'body': 'avatar1',   (Michelle) atau 'avatar2' (Nayla)
+  //   'head': 'hat1',      (Witch Hat) atau 'none'
+  //   'wings': 'wings1',   (Phoenix) atau 'none'
+  //   'effect': 'fire'     (Api) atau 'lightning' (Petir)
+  // }
   final Map<String, dynamic> equippedLoadout; 
   
-  // Item fisik (baju/avatar)
+  // Item fisik yang dimiliki (ID: avatar1, avatar2, hat1, wings1, none)
   final List<String> ownedItems; 
   
-  // [BARU] Efek visual (fire, lightning, etc)
+  // Efek visual yang terbuka (ID: fire, lightning)
   final List<String> unlockedEffects; 
 
   // --- 5. KOMPETITIF (MATCH & RANK) ---
@@ -60,15 +66,22 @@ class UserModel {
     this.dailyWordTarget = 10,
     this.dailyQuizScore = 0,
     this.gold = 500,
-    // Default loadout termasuk effect
+    
+    // [DEFAULT LOADOUT]
+    // Sesuai dengan aset default Anda: Michelle (avatar1) tanpa topi/sayap, efek api.
     this.equippedLoadout = const {
-      'body': 'avatar_default',
-      'weapon': 'none',
-      'effect': 'fire', // Default Effect
+      'body': 'avatar1',
+      'head': 'none',
+      'wings': 'none',
+      'effect': 'fire', 
     },
-    this.ownedItems = const ['avatar_default'], 
-    // Default unlocked effects
+    
+    // Item awal: Avatar 1 & Avatar 2 (opsional), dan 'none'
+    this.ownedItems = const ['avatar1', 'avatar2', 'none'], 
+    
+    // Efek awal: Fire
     this.unlockedEffects = const ['fire'], 
+    
     this.mmr = 1000,
     this.rankName = 'Bronze I',
     this.winCount = 0,
@@ -77,6 +90,29 @@ class UserModel {
     this.unlockedMilestones = const [],
     this.levelsProgress = const {},
   });
+
+  // ===========================================================================
+  // [HELPER 1] AVATAR PATH (GLB)
+  // Menggabungkan body + hat + wings menjadi satu nama file
+  // Contoh output: "assets/models/avatar1_hat1_none.glb"
+  // ===========================================================================
+  String get fullAvatarPath {
+    String body = equippedLoadout['body'] ?? 'avatar1';
+    String head = equippedLoadout['head'] ?? 'none';
+    String wings = equippedLoadout['wings'] ?? 'none';
+    
+    return 'assets/models/${body}_${head}_${wings}.glb';
+  }
+
+  // ===========================================================================
+  // [HELPER 2] EFFECT PATH (JSON / LOTTIE)
+  // [PERBAIKAN] Mengarah ke folder 'assets/effects/' dengan format .json
+  // Contoh output: "assets/effects/fire.json"
+  // ===========================================================================
+  String get effectPath {
+    String effect = equippedLoadout['effect'] ?? 'fire';
+    return 'assets/effects/$effect.json'; 
+  }
 
   // --- COPY WITH ---
   UserModel copyWith({
@@ -95,7 +131,7 @@ class UserModel {
     int? gold,
     Map<String, dynamic>? equippedLoadout,
     List<String>? ownedItems,
-    List<String>? unlockedEffects, // [BARU]
+    List<String>? unlockedEffects,
     int? mmr,
     String? rankName,
     int? winCount,
@@ -122,7 +158,7 @@ class UserModel {
       gold: gold ?? this.gold,
       equippedLoadout: equippedLoadout ?? this.equippedLoadout,
       ownedItems: ownedItems ?? this.ownedItems,
-      unlockedEffects: unlockedEffects ?? this.unlockedEffects, // [BARU]
+      unlockedEffects: unlockedEffects ?? this.unlockedEffects,
       mmr: mmr ?? this.mmr,
       rankName: rankName ?? this.rankName,
       winCount: winCount ?? this.winCount,
@@ -161,14 +197,16 @@ class UserModel {
       dailyQuizScore: toInt(data['dailyQuizScore'], 0),
 
       gold: toInt(data['gold'], 500),
-      // [FIX] Ensure 'effect' exists in loadout
+      
+      // Mengamankan loadout jika data null di DB
       equippedLoadout: Map<String, dynamic>.from(data['equippedLoadout'] ?? {
-        'body': 'avatar_default',
-        'weapon': 'none',
+        'body': 'avatar1',
+        'head': 'none',
+        'wings': 'none',
         'effect': 'fire' 
       }),
-      ownedItems: List<String>.from(data['ownedItems'] ?? ['avatar_default']),
-      // [BARU] Load unlocked effects
+      
+      ownedItems: List<String>.from(data['ownedItems'] ?? ['avatar1', 'avatar2', 'none']),
       unlockedEffects: List<String>.from(data['unlockedEffects'] ?? ['fire']),
       
       mmr: toInt(data['mmr'], 1000),
@@ -204,7 +242,7 @@ class UserModel {
       'gold': gold,
       'equippedLoadout': equippedLoadout,
       'ownedItems': ownedItems,
-      'unlockedEffects': unlockedEffects, // [BARU] Simpan ke DB
+      'unlockedEffects': unlockedEffects, 
       
       'mmr': mmr,
       'rankName': rankName,

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-// --- 1. DEFINISI ENUM (PENTING) ---
 enum ItemCategory { body, head, wings, effect }
 enum ItemRarity { common, rare, epic, legendary, mythic }
 
@@ -11,8 +10,7 @@ class ItemModel {
   final ItemCategory category; 
   final ItemRarity rarity;
   final int price;
-  final String assetPath; 
-  final String? linkedEffectId; 
+  final String assetPath; // GLB (untuk 3D) atau JSON (untuk Effect)
 
   const ItemModel({
     required this.id,
@@ -22,7 +20,6 @@ class ItemModel {
     this.rarity = ItemRarity.common,
     required this.price,
     required this.assetPath,
-    this.linkedEffectId,
   });
 
   Color get rarityColor {
@@ -36,116 +33,72 @@ class ItemModel {
   }
 }
 
-// --- 2. CATALOG TOKO (DATA SUDAH DIPERBAIKI) ---
-// Perhatikan bagian category: ItemCategory.body (Bukan 'body')
-
 final List<ItemModel> shopCatalog = [
-  // ==========================================================
-  // 1. BODY (AVATAR 3D)
-  // ==========================================================
-  ItemModel(
-    id: 'default_avatar', 
-    name: 'Rookie', 
-    description: 'Pakaian standar pemula.',
-    category: ItemCategory.body, // [FIX] Pakai Enum
-    rarity: ItemRarity.common,
+  // --- BODY ---
+  const ItemModel(
+    id: 'avatar1', 
+    name: 'Michelle', 
+    category: ItemCategory.body, 
     price: 0, 
-    assetPath: 'assets/models/avatar1.glb'
+    assetPath: 'assets/models/avatar1_none_none.glb' 
   ),
-  ItemModel(
-    id: 'wizard_robe', 
-    name: 'Mage Robe', 
-    description: 'Jubah penyihir.',
-    category: ItemCategory.body, // [FIX] Pakai Enum
+  const ItemModel(
+    id: 'avatar2', 
+    name: 'Nayla', 
+    category: ItemCategory.body, 
     rarity: ItemRarity.rare,
-    price: 300, 
-    assetPath: 'assets/models/avatar_mage.glb'
-  ),
-  ItemModel(
-    id: 'knight_armor', 
-    name: 'Iron Armor', 
-    description: 'Armor besi kuat.',
-    category: ItemCategory.body, 
-    rarity: ItemRarity.epic,
-    price: 800, 
-    assetPath: 'assets/models/avatar_knight.glb'
-  ),
-  ItemModel(
-    id: 'monster_suit', 
-    name: 'Monster Skin', 
-    description: 'Menakutkan seperti monster.',
-    category: ItemCategory.body, 
-    rarity: ItemRarity.legendary,
-    price: 1500, 
-    assetPath: 'assets/models/monster.glb'
-  ),
-  ItemModel(
-    id: 'teacher_suit', 
-    name: 'Sensei', 
-    description: 'Pakaian guru besar.',
-    category: ItemCategory.body, 
-    rarity: ItemRarity.legendary,
-    price: 2000, 
-    assetPath: 'assets/models/teacher.glb'
-  ),
-
-  // ==========================================================
-  // 2. HEAD (HATS)
-  // ==========================================================
-  ItemModel(
-    id: 'none_head', 
-    name: 'No Hat', 
-    category: ItemCategory.head, // [FIX] Pakai Enum
-    price: 0, 
-    assetPath: ''
-  ),
-  ItemModel(
-    id: 'top_hat', 
-    name: 'Gentleman', 
-    category: ItemCategory.head, 
-    rarity: ItemRarity.rare,
-    price: 150, 
-    assetPath: 'assets/models/hat.glb'
-  ),
-
-  // ==========================================================
-  // 3. WINGS (SAYAP)
-  // ==========================================================
-  ItemModel(
-    id: 'none_wings', 
-    name: 'No Wings', 
-    category: ItemCategory.wings, // [FIX] Pakai Enum
-    price: 0, 
-    assetPath: ''
-  ),
-  ItemModel(
-    id: 'fairy_wings', 
-    name: 'Fairy Wings', 
-    category: ItemCategory.wings, 
-    rarity: ItemRarity.epic,
     price: 500, 
-    assetPath: 'assets/models/wings_fairy.glb'
+    assetPath: 'assets/models/avatar2_none_none.glb' 
   ),
 
-  // ==========================================================
-  // 4. EFFECTS (LOTTIE MAGIC)
-  // ==========================================================
-  ItemModel(
+  // --- HEAD ---
+  const ItemModel(
+    id: 'none', // ID 'none' tidak butuh aset
+    name: 'Lepas Topi', 
+    category: ItemCategory.head, 
+    price: 0, 
+    assetPath: '' 
+  ),
+  const ItemModel(
+    id: 'hat1', 
+    name: 'Witch Hat', 
+    category: ItemCategory.head, 
+    rarity: ItemRarity.epic,
+    price: 200, 
+    assetPath: 'assets/models/hat1.glb'
+  ),
+
+  // --- WINGS ---
+  const ItemModel(
+    id: 'none', 
+    name: 'Lepas Sayap', 
+    category: ItemCategory.wings, 
+    price: 0, 
+    assetPath: ''
+  ),
+  const ItemModel(
+    id: 'wings1', 
+    name: 'Phoenix', 
+    category: ItemCategory.wings, 
+    rarity: ItemRarity.legendary,
+    price: 1000, 
+    assetPath: 'assets/models/wings1.glb'
+  ),
+
+  // --- EFFECT ---
+  const ItemModel(
     id: 'fire', 
     name: 'Fireball', 
-    description: 'Ledakan api panas.',
-    category: ItemCategory.effect, // [FIX] Pakai Enum
-    rarity: ItemRarity.common,
+    category: ItemCategory.effect, 
     price: 0, 
-    assetPath: 'https://lottie.host/98205738-9999-4444-8888-123456789012/fireball.json'
+    assetPath: 'assets/effects/fire.json' // Path JSON Lottie
   ),
-  ItemModel(
+  const ItemModel(
     id: 'lightning', 
     name: 'Thunder', 
-    description: 'Sambaran petir.',
     category: ItemCategory.effect, 
     rarity: ItemRarity.epic,
     price: 500, 
-    assetPath: 'https://lottie.host/575a7062-d27c-473d-8067-d64f02636166/3Q9Z8Z3Z3Z.json'
+    assetPath: 'assets/effects/lightning.json'
   ),
 ];

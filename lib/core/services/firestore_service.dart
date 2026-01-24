@@ -39,7 +39,7 @@ class FirestoreService {
 
         Map<String, dynamic> data = snapshot.data() as Map<String, dynamic>;
 
-        // Ambil data dengan key snake_case (pastikan konsisten dengan UserModel.toMap)
+        // Ambil data dengan key snake_case (fallback) atau camelCase
         int currentGold = (data['gold'] ?? 0).toInt();
         int currentXp = (data['currentXp'] ?? data['current_xp'] ?? 0).toInt(); 
         int currentTotalXp = (data['totalXp'] ?? data['total_xp'] ?? 0).toInt(); 
@@ -119,7 +119,7 @@ class FirestoreService {
       DateTime nextDate = DateTime.now().add(Duration(days: newInterval));
 
       await _db.collection('users').doc(uid).update({
-        'levelsProgress.$levelId': { // Gunakan camelCase
+        'levelsProgress.$levelId': { 
           'interval': newInterval,
           'nextReviewDate': nextDate.toIso8601String(),
           'lastReviewDate': DateTime.now().toIso8601String(),
@@ -131,7 +131,7 @@ class FirestoreService {
     }
   }
 
-  // --- 5. SHOP: BELI ITEM (SUPPORT EFEK) ---
+  // --- 5. SHOP: BELI ITEM (SUPPORT EFEK & ITEM FISIK) ---
   Future<void> purchaseItem(String uid, String itemId, int price, {String? category}) async {
     DocumentReference userRef = _db.collection('users').doc(uid);
 
@@ -143,12 +143,15 @@ class FirestoreService {
       int currentGold = (data['gold'] ?? 0).toInt();
       
       // Tentukan array tujuan berdasarkan kategori
+      // Jika kategori adalah 'effect', simpan di unlockedEffects, selain itu di ownedItems
       String arrayField = (category == 'effect') ? 'unlockedEffects' : 'ownedItems';
-      // Support camelCase dan snake_case untuk kompatibilitas data lama
-      List<dynamic> currentItems = data[arrayField] ?? data[arrayField == 'unlockedEffects' ? 'unlocked_effects' : 'owned_items'] ?? [];
+      
+      // Ambil list item saat ini (Support camelCase & snake_case)
+      List<dynamic> currentItems = data[arrayField] ?? 
+          data[arrayField == 'unlockedEffects' ? 'unlocked_effects' : 'owned_items'] ?? [];
       
       if (currentItems.contains(itemId)) {
-        // Jika sudah punya, tidak perlu throw error, cukup return
+        // Jika sudah punya, return sukses tanpa mengurangi gold
         return; 
       }
 
@@ -165,9 +168,10 @@ class FirestoreService {
 
   // --- 6. SHOP: EQUIP ITEM ---
   Future<void> equipItem(String uid, String category, String itemId) async {
-    // category bisa 'body', 'head', 'wings', 'effect'
+    // category harus salah satu dari: 'body', 'head', 'wings', 'effect'
+    // Update map spesifik menggunakan notasi titik (dot notation) Firestore
     await _db.collection('users').doc(uid).update({
-      'equippedLoadout.$category': itemId, // Gunakan camelCase
+      'equippedLoadout.$category': itemId, 
     });
   }
 
