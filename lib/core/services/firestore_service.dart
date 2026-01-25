@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import '../../models/user_model.dart';
+import 'srs_service.dart'; // [FIX] Import ini wajib ada untuk logika SRS
 
 class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -100,7 +101,12 @@ class FirestoreService {
     }
     
     if (quizScore != null) {
-      updates['dailyQuizScore'] = FieldValue.increment(quizScore);
+      updates['dailyQuizScore'] = FieldValue.increment(quizScore); // Ubah logika sesuai kebutuhan (overwrite/average/increment)
+      // Catatan: Jika ingin menyimpan skor rata-rata harian, logika ini perlu diubah.
+      // Namun untuk "Total Skor Harian" increment sudah benar.
+      // Jika ingin replace skor terakhir: updates['dailyQuizScore'] = quizScore;
+      // Untuk tutorial ini kita pakai replace agar sesuai tampilan Story Screen (0-100)
+       updates['dailyQuizScore'] = quizScore;
     }
 
     if (updates.isNotEmpty) {
@@ -108,7 +114,7 @@ class FirestoreService {
     }
   }
 
-  // --- 4. SRS REVIEW SYSTEM ---
+  // --- 4. SRS REVIEW SYSTEM (MANUAL / SINGLE LEVEL) ---
   Future<void> submitLevelReview(String uid, String levelId, int rating, int currentInterval) async {
     try {
       // 1: Hard, 2: Good, 3: Easy
@@ -194,6 +200,58 @@ class FirestoreService {
     } catch (e) {
       debugPrint("Error finding opponent: $e");
       return null;
+    }
+  }
+
+  // --- 9. SRS LOGIC: GET DUE LEVELS ---
+  // Mengambil daftar Level ID yang waktunya direview hari ini
+  List<int> getDueLevels(UserModel user) {
+    List<int> dueLevelIds = [];
+    DateTime now = DateTime.now();
+
+    user.levelsProgress.forEach((key, value) {
+      // Cek apakah data valid
+      if (value is Map && value['nextReviewDate'] != null) {
+        DateTime nextReview = DateTime.parse(value['nextReviewDate']);
+        // Jika waktu review sudah lewat atau hari ini
+        if (now.isAfter(nextReview) || now.isAtSameMomentAs(nextReview)) {
+          dueLevelIds.add(int.parse(key));
+        }
+      } else {
+        // Jika belum ada data progress (baru tamat), anggap due (wajib review)
+        dueLevelIds.add(int.parse(key));
+      }
+    });
+    
+    // Jika tidak ada yang due, kembalikan list kosong
+    return dueLevelIds;
+  }
+
+  // --- 10. SRS LOGIC: BATCH UPDATE ---
+  // Update banyak level sekaligus setelah Daily Review selesai
+  Future<void> batchUpdateLevelProgress(String uid, Map<int, double> levelAccuracies, UserModel user) async {
+    WriteBatch batch = _db.batch();
+    DocumentReference userRef = _db.collection('users').doc(uid);
+
+    Map<String, dynamic> updates = {};
+
+    levelAccuracies.forEach((levelId, accuracy) {
+      // Ambil interval lama dari data user lokal
+      int currentInterval = 1;
+      if (user.levelsProgress.containsKey(levelId.toString())) {
+        currentInterval = user.levelsProgress[levelId.toString()]['interval'] ?? 1;
+      }
+
+      // Hitung jadwal baru pakai SRSService
+      var srsResult = SRSService.calculateNextReview(currentInterval, accuracy);
+
+      // Siapkan update path: levelsProgress.1.nextReviewDate
+      updates['levelsProgress.$levelId'] = srsResult;
+    });
+
+    if (updates.isNotEmpty) {
+      batch.update(userRef, updates);
+      await batch.commit();
     }
   }
 }

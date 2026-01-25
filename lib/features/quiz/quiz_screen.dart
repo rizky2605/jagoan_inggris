@@ -251,7 +251,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
       }
     });
 
-    await Future.delayed(const Duration(seconds: 3));
+    await Future.delayed(const Duration(seconds: 2));
 
     if (!mounted) return;
 
@@ -403,7 +403,13 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
                           flex: 4,
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
-                            children: [_buildQuestionCard(currentQ)],
+                            children: [
+                              AnimatedOpacity(
+                                opacity: _showEndText ? 0.0 : 1.0,
+                                duration: const Duration(milliseconds: 600),
+                                child: _buildQuestionCard(currentQ),
+                              ),
+                            ],
                           ),
                         ),
 

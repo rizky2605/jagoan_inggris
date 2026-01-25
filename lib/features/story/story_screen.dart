@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'dart:ui'; // Diperlukan untuk CustomPainter
-import 'dart:math'; // Diperlukan untuk animasi
+import 'dart:ui'; 
+import 'dart:math'; 
 
 import '../../models/user_model.dart';
 import '../../models/level_model.dart';
@@ -23,7 +23,7 @@ class StoryScreen extends StatefulWidget {
 class _StoryScreenState extends State<StoryScreen> with SingleTickerProviderStateMixin {
   final FirestoreService _firestoreService = FirestoreService();
   
-  // Controller animasi
+  // Controller animasi jalur
   late AnimationController _animationController;
 
   int _displayStageIndex = 0; 
@@ -33,10 +33,9 @@ class _StoryScreenState extends State<StoryScreen> with SingleTickerProviderStat
   @override
   void initState() {
     super.initState();
-    // Animasi looping terus menerus (0.0 -> 1.0)
     _animationController = AnimationController(
       vsync: this, 
-      duration: const Duration(seconds: 1), // Kecepatan gerak garis (makin kecil makin cepat)
+      duration: const Duration(seconds: 1), 
     )..repeat(); 
   }
 
@@ -46,12 +45,22 @@ class _StoryScreenState extends State<StoryScreen> with SingleTickerProviderStat
     super.dispose();
   }
 
+  // --- LOGIKA WARNA STAGE ---
   Color _getStageColor(int levelId) {
     if (levelId % 5 == 0) return const Color(0xFFFF5252); 
     if (levelId <= 5) return const Color(0xFF64FFDA); 
     if (levelId <= 10) return const Color(0xFF69F0AE); 
     if (levelId <= 15) return const Color(0xFFFFAB40); 
     return const Color(0xFFE040FB); 
+  }
+
+  // --- LOGIKA WARNA PROGRESS BAR (DINAMIS) ---
+  Color _getProgressColor(double percentage) {
+    if (percentage >= 1.0) return const Color(0xFF00E676); // Hijau Terang (Selesai)
+    if (percentage >= 0.75) return const Color(0xFF69F0AE); // Hijau Muda
+    if (percentage >= 0.5) return const Color(0xFFFFD740); // Kuning
+    if (percentage >= 0.25) return const Color(0xFFFFAB40); // Oranye
+    return const Color(0xFFFF5252); // Merah (Dikit)
   }
 
   String _getStageName(int stageIndex) {
@@ -92,7 +101,6 @@ class _StoryScreenState extends State<StoryScreen> with SingleTickerProviderStat
             .where((lvl) => lvl.id >= startId && lvl.id <= endId)
             .toList();
 
-        // Hitung level aktif di stage ini untuk jalur
         int activeLevelsInThisStage = 0;
         for (var lvl in visibleLevels) {
           if (lvl.id <= currentActiveLevel) {
@@ -101,8 +109,13 @@ class _StoryScreenState extends State<StoryScreen> with SingleTickerProviderStat
         }
 
         Color currentStageColor = _getStageColor(startId); 
+        
+        // Hitung Progress (0.0 - 1.0)
         double quizProgress = (currentUser.dailyQuizScore / 100).clamp(0.0, 1.0);
-        double vocabProgress = (currentUser.dailyWordCount / currentUser.dailyWordTarget).clamp(0.0, 1.0);
+        
+        // Hindari pembagian nol
+        double targetVocab = currentUser.dailyWordTarget > 0 ? currentUser.dailyWordTarget.toDouble() : 1.0;
+        double vocabProgress = (currentUser.dailyWordCount / targetVocab).clamp(0.0, 1.0);
 
         return Scaffold(
           backgroundColor: const Color(0xFF1E1E2C),
@@ -119,7 +132,7 @@ class _StoryScreenState extends State<StoryScreen> with SingleTickerProviderStat
                 children: [
                   const SizedBox(height: 15),
 
-                  // --- 1. KARTU AKTIVITAS ---
+                  // --- 1. KARTU AKTIVITAS (PROGRESS ANIMASI) ---
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: SizedBox(
@@ -133,7 +146,7 @@ class _StoryScreenState extends State<StoryScreen> with SingleTickerProviderStat
                               subtitle: "Materi Lalu",
                               infoText: "Skor: ${currentUser.dailyQuizScore}",
                               progress: quizProgress,
-                              colors: [const Color(0xFF448AFF), const Color(0xFF2962FF)],
+                              cardGradient: [const Color(0xFF448AFF), const Color(0xFF2962FF)],
                               btnText: "MULAI",
                               btnColor: const Color(0xFFFFC107),
                               onTap: () => _startDailyReview(context, currentUser),
@@ -147,7 +160,7 @@ class _StoryScreenState extends State<StoryScreen> with SingleTickerProviderStat
                               subtitle: "Hafalan Baru",
                               infoText: "${currentUser.dailyWordCount}/${currentUser.dailyWordTarget}",
                               progress: vocabProgress,
-                              colors: [const Color(0xFFE040FB), const Color(0xFFAA00FF)],
+                              cardGradient: [const Color(0xFFE040FB), const Color(0xFFAA00FF)],
                               btnText: "HAFALKAN",
                               btnColor: const Color(0xFFFFC107),
                               onTap: () {
@@ -226,13 +239,12 @@ class _StoryScreenState extends State<StoryScreen> with SingleTickerProviderStat
 
                   const SizedBox(height: 50), 
 
-                  // --- 3. AREA GRID & JALUR (STACKED) ---
+                  // --- 3. AREA GRID & JALUR ---
                   Expanded(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 30),
                       child: Stack(
                         children: [
-                          // LAYER 1: JALUR (Di Belakang Pin)
                           Positioned.fill(
                             child: AnimatedBuilder(
                               animation: _animationController,
@@ -248,7 +260,6 @@ class _StoryScreenState extends State<StoryScreen> with SingleTickerProviderStat
                             ),
                           ),
 
-                          // LAYER 2: PIN LEVEL (Di Depan Jalur)
                           GridView.builder(
                             clipBehavior: Clip.none, 
                             physics: const NeverScrollableScrollPhysics(),
@@ -269,7 +280,7 @@ class _StoryScreenState extends State<StoryScreen> with SingleTickerProviderStat
                     ),
                   ),
                   
-                  // INDICATOR DOTS
+                  // DOTS INDICATOR
                   Center(
                     child: Padding(
                       padding: const EdgeInsets.only(bottom: 20),
@@ -305,6 +316,7 @@ class _StoryScreenState extends State<StoryScreen> with SingleTickerProviderStat
     bool isLocked = level.id > (currentUser.lastCompletedLevel + 1);
     bool isCurrent = level.id == currentUser.lastCompletedLevel + 1;
     bool isBoss = level.id % 5 == 0;
+    bool isCompleted = level.id <= currentUser.lastCompletedLevel; 
 
     bool isReviewDue = false;
     if (currentUser.levelsProgress.containsKey(level.id.toString())) {
@@ -320,7 +332,6 @@ class _StoryScreenState extends State<StoryScreen> with SingleTickerProviderStat
 
     double circleSize = 60.0;
 
-    // Animasi "Breathing" pada Pin
     return AnimatedBuilder(
       animation: _animationController,
       builder: (context, child) {
@@ -336,9 +347,35 @@ class _StoryScreenState extends State<StoryScreen> with SingleTickerProviderStat
               List<QuestionModel> reviewQuestions = levelQuestions[level.id] ?? [];
               if (reviewQuestions.isEmpty) return;
               reviewQuestions.shuffle();
-              Navigator.push(context, MaterialPageRoute(builder: (context) => ReviewScreen(user: currentUser, questions: reviewQuestions, levelId: level.id.toString())));
+              Navigator.push(context, MaterialPageRoute(
+                builder: (context) => ReviewScreen(user: currentUser, questions: reviewQuestions)
+              ));
+            } else if (isCompleted) {
+              showDialog(
+                context: context,
+                builder: (context) => AlertDialog(
+                  backgroundColor: const Color(0xFF1E1E2C),
+                  title: const Text("Ulangi Level?", style: TextStyle(color: Colors.cyanAccent)),
+                  content: const Text("Mainkan lagi untuk latihan.", style: TextStyle(color: Colors.white70)),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(context), child: const Text("Batal")),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.cyanAccent, foregroundColor: Colors.black),
+                      onPressed: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (context) => MaterialScreen(level: level, user: currentUser, isReview: true)
+                        ));
+                      },
+                      child: const Text("Mulai"),
+                    ),
+                  ],
+                ),
+              );
             } else {
-              Navigator.push(context, MaterialPageRoute(builder: (context) => MaterialScreen(level: level, user: currentUser)));
+              Navigator.push(context, MaterialPageRoute(
+                builder: (context) => MaterialScreen(level: level, user: currentUser, isReview: false)
+              ));
             }
           },
           child: Column(
@@ -361,18 +398,12 @@ class _StoryScreenState extends State<StoryScreen> with SingleTickerProviderStat
                           ? const Icon(Icons.history_edu, color: Colors.white, size: 28) 
                           : (isBoss 
                               ? const Icon(Icons.star_rounded, color: Colors.white, size: 30) 
-                              : Icon(
-                                  Icons.play_arrow_rounded, 
-                                  color: isCurrent ? Colors.black : displayColor, 
-                                  size: 38
-                                )
+                              : Icon(Icons.play_arrow_rounded, color: isCurrent ? Colors.black : displayColor, size: 38)
                             )
                         ),
                 ),
               ),
-              
               const SizedBox(height: 12),
-              
               if (isCurrent || isReviewDue)
                 Text(isReviewDue ? "REVIEW!" : "PLAY", style: GoogleFonts.poppins(color: displayColor, fontSize: 12, fontWeight: FontWeight.bold))
               else if (!isLocked)
@@ -389,12 +420,32 @@ class _StoryScreenState extends State<StoryScreen> with SingleTickerProviderStat
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Selesaikan Level 1 dulu!")));
       return;
     }
-    List<QuestionModel> allQuestions = [];
-    for (int i = 1; i <= currentUser.lastCompletedLevel; i++) {
-       if (levelQuestions.containsKey(i)) allQuestions.addAll(levelQuestions[i]!);
+    List<int> dueLevels = _firestoreService.getDueLevels(currentUser);
+    if (dueLevels.isEmpty) {
+      int maxLvl = currentUser.lastCompletedLevel;
+      for (int i = 0; i < 3; i++) {
+        int randomLvl = Random().nextInt(maxLvl) + 1;
+        if (!dueLevels.contains(randomLvl)) dueLevels.add(randomLvl);
+      }
     }
-    allQuestions.shuffle();
-    Navigator.push(context, MaterialPageRoute(builder: (context) => ReviewScreen(user: currentUser, questions: allQuestions.take(10).toList(), levelId: "daily_review")));
+    List<QuestionModel> sessionQuestions = [];
+    for (int lvlId in dueLevels) {
+      if (levelQuestions.containsKey(lvlId)) {
+        var questions = List<QuestionModel>.from(levelQuestions[lvlId]!);
+        questions.shuffle();
+        sessionQuestions.addAll(questions.take(3)); 
+      }
+    }
+    sessionQuestions.shuffle();
+    if (sessionQuestions.length > 15) sessionQuestions = sessionQuestions.take(15).toList();
+
+    if (sessionQuestions.isEmpty) {
+       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Belum ada soal tersedia.")));
+       return;
+    }
+    Navigator.push(context, MaterialPageRoute(
+      builder: (context) => ReviewScreen(user: currentUser, questions: sessionQuestions)
+    ));
   }
 
   Widget _buildTaskCard(
@@ -403,7 +454,7 @@ class _StoryScreenState extends State<StoryScreen> with SingleTickerProviderStat
     required String subtitle,
     required String infoText,
     required double progress,
-    required List<Color> colors,
+    required List<Color> cardGradient,
     required String btnText,
     required Color btnColor,
     required VoidCallback onTap,
@@ -411,9 +462,9 @@ class _StoryScreenState extends State<StoryScreen> with SingleTickerProviderStat
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        gradient: LinearGradient(colors: colors, begin: Alignment.topLeft, end: Alignment.bottomRight),
+        gradient: LinearGradient(colors: cardGradient, begin: Alignment.topLeft, end: Alignment.bottomRight),
         borderRadius: BorderRadius.circular(18),
-        boxShadow: [BoxShadow(color: colors.last.withAlpha(77), blurRadius: 8, offset: const Offset(0, 4))],
+        boxShadow: [BoxShadow(color: cardGradient.last.withAlpha(77), blurRadius: 8, offset: const Offset(0, 4))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -428,9 +479,20 @@ class _StoryScreenState extends State<StoryScreen> with SingleTickerProviderStat
           ),
           Text(subtitle, style: const TextStyle(color: Colors.white70, fontSize: 10)),
           
-          ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: LinearProgressIndicator(value: progress, backgroundColor: const Color(0x33000000), color: Colors.white, minHeight: 6),
+          // --- [PERBAIKAN] PROGRESS BAR ANIMASI & WARNA DINAMIS ---
+          TweenAnimationBuilder<double>(
+            tween: Tween<double>(begin: 0, end: progress),
+            duration: const Duration(milliseconds: 1500), // Durasi animasi gerak
+            curve: Curves.easeOutCubic,
+            builder: (context, value, _) => ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: LinearProgressIndicator(
+                value: value, 
+                backgroundColor: Colors.black26, 
+                color: _getProgressColor(value), // Warna berubah sesuai progress
+                minHeight: 8, // Sedikit lebih tebal
+              ),
+            ),
           ),
           
           SizedBox(
@@ -451,33 +513,18 @@ class _StoryScreenState extends State<StoryScreen> with SingleTickerProviderStat
   }
 }
 
-// ===========================================================================
-// PAINTER JALUR SEGMENTED (Aktif/Mati per Level & Animasi Kanan)
-// ===========================================================================
+// ... SegmentedGridPathPainter Tetap Sama ...
 class SegmentedGridPathPainter extends CustomPainter {
   final Color activeColor;
   final double animationValue;
   final int activeLevelsCount; 
 
-  SegmentedGridPathPainter({
-    required this.activeColor,
-    required this.animationValue,
-    required this.activeLevelsCount,
-  });
+  SegmentedGridPathPainter({required this.activeColor, required this.animationValue, required this.activeLevelsCount});
 
   @override
   void paint(Canvas canvas, Size size) {
-    final activePaint = Paint()
-      ..color = activeColor.withOpacity(0.8)
-      ..strokeWidth = 4
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
-
-    final inactivePaint = Paint()
-      ..color = Colors.white10
-      ..strokeWidth = 3
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
+    final activePaint = Paint()..color = activeColor.withOpacity(0.8)..strokeWidth = 4..style = PaintingStyle.stroke..strokeCap = StrokeCap.round;
+    final inactivePaint = Paint()..color = Colors.white10..strokeWidth = 3..style = PaintingStyle.stroke..strokeCap = StrokeCap.round;
 
     double centerY = 30.0; 
     double columnWidth = size.width / 5;
@@ -492,47 +539,26 @@ class SegmentedGridPathPainter extends CustomPainter {
       bool isActive = i < (activeLevelsCount - 1);
 
       if (isActive) {
-        // GAMBAR JALUR AKTIF BERGERAK (KIRI KE KANAN)
-        double dashWidth = 10;
-        double dashSpace = 8;
-        double totalDash = dashWidth + dashSpace;
-        
-        // [FIX] Offset positif agar bergerak ke KANAN
+        double dashWidth = 10; double dashSpace = 8; double totalDash = dashWidth + dashSpace;
         double phase = animationValue * totalDash; 
         
-        Path path = Path();
-        path.moveTo(lineStart, centerY);
-        path.lineTo(lineEnd, centerY);
-
+        Path path = Path(); path.moveTo(lineStart, centerY); path.lineTo(lineEnd, centerY);
         Path dashPath = Path();
         for (PathMetric measure in path.computeMetrics()) {
-          // [FIX] Mulai dari phase positif, dikurangi totalDash agar looping mulus
           double distance = phase - totalDash; 
           while (distance < measure.length) {
             double drawStart = max(0, distance);
             if (drawStart < measure.length) {
-               dashPath.addPath(
-                 measure.extractPath(drawStart, distance + dashWidth),
-                 Offset.zero
-               );
+               dashPath.addPath(measure.extractPath(drawStart, distance + dashWidth), Offset.zero);
             }
             distance += totalDash;
           }
         }
         canvas.drawPath(dashPath, activePaint);
-
       } else {
-        // GAMBAR JALUR MATI (DIAM)
-        double dashWidth = 6;
-        double dashSpace = 10;
-        double currentX = lineStart;
-        
+        double dashWidth = 6; double dashSpace = 10; double currentX = lineStart;
         while (currentX < lineEnd) {
-          canvas.drawLine(
-            Offset(currentX, centerY),
-            Offset(min(currentX + dashWidth, lineEnd), centerY),
-            inactivePaint,
-          );
+          canvas.drawLine(Offset(currentX, centerY), Offset(min(currentX + dashWidth, lineEnd), centerY), inactivePaint);
           currentX += dashWidth + dashSpace;
         }
       }
@@ -541,7 +567,6 @@ class SegmentedGridPathPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant SegmentedGridPathPainter oldDelegate) {
-    return oldDelegate.animationValue != animationValue || 
-           oldDelegate.activeLevelsCount != activeLevelsCount;
+    return oldDelegate.animationValue != animationValue || oldDelegate.activeLevelsCount != activeLevelsCount;
   }
 }

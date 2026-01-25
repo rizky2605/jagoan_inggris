@@ -1,5 +1,8 @@
+// lib/core/services/vocabulary_service.dart
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/word_model.dart';
+import '../constants/vocabulary_data.dart'; // Import Data Bank
 
 class VocabularyService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -34,7 +37,7 @@ class VocabularyService {
   // ===========================================================================
 
   // Ambil daftar kata yang waktunya direview
-  Stream<List<WordModel>> getDueWords(String uid) {
+Stream<List<WordModel>> getDueWords(String uid) {
     return _db
         .collection('users')
         .doc(uid)
@@ -49,6 +52,20 @@ class VocabularyService {
     });
   }
 
+  // [BARU] Ambil SEMUA kata yang sudah dipelajari (Mode Latihan/Cramming)
+  Stream<List<WordModel>> getAllLearnedWords(String uid) {
+    return _db
+        .collection('users')
+        .doc(uid)
+        .collection('vocabulary')
+        .orderBy('word') // Urutkan abjad atau berdasarkan 'box'
+        .snapshots()
+        .map((snapshot) {
+      return snapshot.docs
+          .map((doc) => WordModel.fromMap(doc.data(), doc.id))
+          .toList();
+    });
+  }
   // Proses setelah review (Ingat/Lupa) -> Update Box & Tanggal
   Future<void> processWordReview(String uid, WordModel word, bool remembered) async {
     int newBox = remembered ? (word.box + 1).clamp(1, 5) : 1;
@@ -78,50 +95,58 @@ class VocabularyService {
 
   // Mengambil 5 kata baru secara acak yang BELUM pernah dipelajari user
   Future<List<WordModel>> fetchNewDailyBatch(String uid) async {
-    // 1. Ambil kata yang sudah dipelajari user
+    // 1. Ambil daftar kata yang SUDAH dipelajari user dari Firestore
+    // Tips: Untuk efisiensi bandwidth jika data besar, idealnya hanya ambil field 'word' saja.
+    // Tapi Firestore klien standar mengambil full document.
     final userVocabSnapshot = await _db.collection('users').doc(uid).collection('vocabulary').get();
+    
+    // Buat Set berisi kata-kata yang sudah dipelajari agar pencarian cepat (O(1))
     final learnedWords = userVocabSnapshot.docs.map((doc) => doc['word'] as String).toSet();
 
-    // 2. Filter dari Master Bank (Hanya ambil yang belum ada di learnedWords)
-    List<WordModel> newWords = _masterWordBank.where((word) => !learnedWords.contains(word.word)).toList();
+    // 2. Filter dari MASTER DATA (vocabulary_data.dart)
+    // Hanya ambil kata yang TIDAK ADA di learnedWords
+    List<WordModel> availableWords = VocabularyData.masterWordBank
+        .where((word) => !learnedWords.contains(word.word))
+        .toList();
 
-    // 3. Acak dan ambil 5
-    newWords.shuffle();
-    return newWords.take(5).toList();
+    // 3. Acak dan ambil 5 kata
+    availableWords.shuffle();
+    return availableWords.take(5).toList();
   }
 
   // Simpan 5 kata hasil belajar ke database user
   Future<void> saveDailyBatch(String uid, List<WordModel> words) async {
     final batch = _db.batch();
     for (var word in words) {
+      // Gunakan ID kata yang konsisten jika ada, atau auto-id
+      // Agar lebih rapi, kita biarkan auto-id dari Firestore untuk user collection
+      // Tapi kita simpan 'original_id' jika perlu tracking ke master bank.
       var docRef = _db.collection('users').doc(uid).collection('vocabulary').doc(); 
-      batch.set(docRef, word.toMap());
+      
+      // Pastikan tanggal review pertama adalah BESOK (bukan sekarang)
+      WordModel newWord = WordModel(
+        id: docRef.id,
+        word: word.word,
+        meaning: word.meaning,
+        pronunciation: word.pronunciation,
+        category: word.category,
+        exampleSentence: word.exampleSentence,
+        mnemonic: word.mnemonic,
+        box: 1,
+        nextReview: DateTime.now().add(const Duration(days: 1)) // Review pertama besok
+      );
+
+      batch.set(docRef, newWord.toMap());
     }
     await batch.commit();
   }
 
   // ===========================================================================
-  // 4. HELPER & DEBUG (Ini yang bikin error sebelumnya)
+  // 4. HELPER (Untuk Admin / Debug)
   // ===========================================================================
 
-  // --- INI FUNGSI YANG HILANG SEBELUMNYA ---
+  // Menambah satu kata manual ke user (Misal untuk testing)
   Future<void> addWord(String uid, WordModel word) async {
     await _db.collection('users').doc(uid).collection('vocabulary').add(word.toMap());
   }
-
-  // ===========================================================================
-  // 5. MASTER DATA BANK (Simulasi Database Server)
-  // ===========================================================================
-  final List<WordModel> _masterWordBank = [
-    WordModel(id: '', word: 'Abundant', pronunciation: '/əˈbʌn.dənt/', category: 'Adjective', meaning: 'Melimpah', mnemonic: "Roti (Bun) Menari (Dance) karena selai MELIMPAH.", exampleSentence: "We have abundant food.", nextReview: DateTime.now()),
-    WordModel(id: '', word: 'Gloomy', pronunciation: '/ˈɡluː.mi/', category: 'Adjective', meaning: 'Suram', mnemonic: "Kena LEM (Glue) jadi SURAM.", exampleSentence: "The sky is gloomy.", nextReview: DateTime.now()),
-    WordModel(id: '', word: 'Keen', pronunciation: '/kiːn/', category: 'Adjective', meaning: 'Tertarik', mnemonic: "Si IKIN sangat TERTARIK belajar.", exampleSentence: "She is keen on music.", nextReview: DateTime.now()),
-    WordModel(id: '', word: 'Candid', pronunciation: '/ˈkæn.dɪd/', category: 'Adjective', meaning: 'Jujur', mnemonic: "KANDIDAT harus JUJUR.", exampleSentence: "To be candid, I dislike it.", nextReview: DateTime.now()),
-    WordModel(id: '', word: 'Huge', pronunciation: '/hjuːdʒ/', category: 'Adjective', meaning: 'Besar', mnemonic: "HIU itu badannya BESAR.", exampleSentence: "A huge mistake.", nextReview: DateTime.now()),
-    WordModel(id: '', word: 'Vanish', pronunciation: '/ˈvæn.ɪʃ/', category: 'Verb', meaning: 'Menghilang', mnemonic: "Pakai 'Vanish' noda MENGHILANG.", exampleSentence: "The ghost vanished.", nextReview: DateTime.now()),
-    WordModel(id: '', word: 'Elaborate', pronunciation: '/iˈlæb.ə.reɪt/', category: 'Verb', meaning: 'Menjelaskan Detail', mnemonic: "Laboratorium (LAB) butuh PENJELASAN DETAIL.", exampleSentence: "Please elaborate your idea.", nextReview: DateTime.now()),
-    WordModel(id: '', word: 'Fragile', pronunciation: '/ˈfrædʒ.aɪl/', category: 'Adjective', meaning: 'Rapuh', mnemonic: "Pergi (GO) kalau hati RAPUH.", exampleSentence: "Glass is fragile.", nextReview: DateTime.now()),
-    WordModel(id: '', word: 'Obstacle', pronunciation: '/ˈɒb.stə.kəl/', category: 'Noun', meaning: 'Hambatan', mnemonic: "OBor SaTAip (Obstacle) menerangi HAMBATAN.", exampleSentence: "Face the obstacle.", nextReview: DateTime.now()),
-    WordModel(id: '', word: 'Rural', pronunciation: '/ˈrʊə.rəl/', category: 'Adjective', meaning: 'Pedesaan', mnemonic: "RUSA tinggal di PEDESAAN.", exampleSentence: "I like rural areas.", nextReview: DateTime.now()),
-  ];
 }

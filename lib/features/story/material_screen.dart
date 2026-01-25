@@ -8,11 +8,17 @@ import '../quiz/quiz_screen.dart';
 class MaterialScreen extends StatelessWidget {
   final LevelModel level;
   final UserModel user;
+  final bool isReview; 
 
-  MaterialScreen({super.key, required this.level, required this.user});
+  const MaterialScreen({
+    super.key, 
+    required this.level, 
+    required this.user,
+    this.isReview = false, 
+  });
 
-  // --- DATA MATERI (SAMA SEPERTI SEBELUMNYA) ---
-  final Map<int, String> materialData = {
+  // --- DATA MATERI ---
+  final Map<int, String> materialData = const {
     // --- SECTION 1: BASIC ---
     1: """
 Halo Jagoan! Sebelum bertualang, kenali dulu siapa pelakunya.
@@ -56,8 +62,6 @@ Makan ➡️ Eats
 
 Ingat: Orang ketiga suka es (s/es)! 🍦
 """,
-
-
     3: """
 🍎 ARTICLES (A, An, The)
 Kata sandang untuk menunjuk benda.
@@ -78,7 +82,6 @@ Untuk benda yang sudah jelas atau cuma satu di dunia.
 ☀️ The sun (Matahari)
 🚪 The door (Pintu itu)
 """,
-
     4: """
 📦 PLURAL NOUNS (Benda Banyak)
 Kalau bendanya lebih dari satu, kita harus ubah bentuknya!
@@ -98,7 +101,6 @@ Hafalkan ini, jangan sampai salah mantra!
 👶 Child ➡️ Children (Anak-anak)
 👥 Person ➡️ People (Orang-orang)
 """,
-
     5: """
 ⚔️ MINI BOSS: UJIAN DASAR
 Waspada! Boss pertama menghadang!
@@ -129,7 +131,6 @@ To Be + Verb-ING
 Jangan bilang "I running". Harus ada "Am"!
 "I AM running."
 """,
-
     7: """
 👉 PRONOUNS (Kata Ganti)
 Beda posisi, beda wujudnya lho!
@@ -146,7 +147,6 @@ Me, You, Us, Them, Him, Her.
 My, Your, Our, Their, His, Her.
 "This is MY sword." (Ini pedangku)
 """,
-
     8: """
 🎨 ADJECTIVES (Kata Sifat)
 Kata yang memberi warna pada kalimatmu!
@@ -165,7 +165,6 @@ Lawan Kata Populer:
 🚀 Fast vs 🐢 Slow
 😊 Happy vs 😢 Sad
 """,
-
     9: """
 🔒 POSSESSIVE ('S)
 Cara cepat bilang "Milik Siapa".
@@ -180,7 +179,6 @@ Cukup tempelkan ('s) di belakang nama pemilik.
 It's = It is (Itu adalah)
 Its = Miliknya (Tanpa koma atas)
 """,
-
     10: """
 👹 BIG BOSS: UJIAN KEDUA
 Monster besar mendekat! Dia lebih kuat dari sebelumnya.
@@ -215,7 +213,6 @@ Pakai VERB 2 (Kata Kerja Bentuk 2)
 📅 Tanda Waktu:
 Yesterday (Kemarin), Last night (Tadi malam).
 """,
-
     12: """
 🔮 FUTURE TENSE (Will)
 Masa depan cerah menantimu!
@@ -235,7 +232,6 @@ Will + Verb 1 (Polos)
 Will not = Won't
 "I won't give up!" (Saya tidak akan menyerah!)
 """,
-
     13: """
 🛠️ MODALS (Kata Bantu Sakti)
 Menambah makna "Bisa", "Harus", atau "Sebaiknya".
@@ -253,7 +249,6 @@ Menambah makna "Bisa", "Harus", atau "Sebaiknya".
 Setelah Modal, kata kerja KEMBALI ASAL (Verb 1).
 Tidak boleh pakai 's', 'ing', atau 'to'.
 """,
-
     14: """
 📍 PREPOSITIONS (In, On, At)
 Jangan tersesat! Gunakan kompas ini.
@@ -272,7 +267,6 @@ Jangan tersesat! Gunakan kompas ini.
 🏙️ Kota/Negara: In Jakarta, In Indonesia
 📦 Ruang: In the box
 """,
-
     15: """
 🐉 MEGA BOSS: UJIAN MENENGAH
 Naga penjaga gerbang Intermediate menghadang!
@@ -304,7 +298,6 @@ Siapa yang lebih hebat?
 Good ➡️ Better (Lebih baik)
 Bad ➡️ Worse (Lebih buruk)
 """,
-
     17: """
 🏆 SUPERLATIVES (Paling)
 Menjadi juara satu!
@@ -320,7 +313,6 @@ Menjadi juara satu!
 Good ➡️ The Best (Terbaik)
 Bad ➡️ The Worst (Terburuk)
 """,
-
     18: """
 ✅ PRESENT PERFECT
 Sudah atau Belum? Hasilnya masih terasa.
@@ -337,7 +329,6 @@ He/She/It ➡️ Has
 "She has gone." (Dia sudah pergi - tidak ada di sini)
 "Have you finished?" (Sudah selesai belum?)
 """,
-
     19: """
 🛡️ PASSIVE VOICE (Kalimat Pasif)
 Fokus pada korbannya, bukan pelakunya.
@@ -356,7 +347,6 @@ Pasif: "My car WAS STOLEN." (Mobilku dicuri!)
 
 Ingat: Wajib pakai Verb 3!
 """,
-
      20: """
 👑 FINAL EXAM: MASTER LEVEL
 Raja Terakhir telah bangkit! 🤴
@@ -375,33 +365,38 @@ Kerahkan semua ilmumu, Jagoan! Dunia (dan sertifikatmu) menantimu!
   @override
   Widget build(BuildContext context) {
     String content = materialData[level.id] ?? "Materi rahasia sedang disusun oleh Sensei.";
+    
+    // Logika Deteksi Boss
+    bool isBossLevel = level.id % 5 == 0;
+    
+    // Aset 3D: Boss atau Guru
+    String modelAsset = isBossLevel ? 'assets/models/boss1.glb' : 'assets/models/teacher.glb';
+    
+    // Warna Tema: Merah untuk Boss, Ungu untuk Guru
+    List<Color> gradientColors = isBossLevel 
+        ? [const Color(0xFF8B0000), const Color(0xFF3E0000)] // Merah Gelap
+        : [const Color(0xFF2D2D44), const Color(0xFF1E1E2C)]; // Ungu Gelap
 
     return Scaffold(
       backgroundColor: const Color(0xFF1E1E2C),
-      // Gunakan SafeArea agar tidak tertutup notch/status bar
       body: SafeArea(
-        // PERUBAHAN UTAMA: Menggunakan ROW untuk layout Kiri-Kanan
         child: Row(
           children: [
-            // ================= BAGIAN KIRI (PANEL GURU) =================
+            // ================= BAGIAN KIRI (PANEL GURU/BOSS) =================
             Expanded(
-              flex: 4, // Mengambil 40% lebar layar
+              flex: 4,
               child: Container(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
-                    colors: [
-                      const Color(0xFF2D2D44),
-                      const Color(0xFF1E1E2C),
-                    ],
+                    colors: gradientColors,
                   ),
-                  // Border kanan sebagai pemisah
-                  border: Border(right: BorderSide(color: Colors.cyanAccent.withValues(alpha: 0.1))),
+                  border: Border(right: BorderSide(color: isBossLevel ? Colors.redAccent.withOpacity(0.3) : Colors.cyanAccent.withOpacity(0.1))),
                 ),
                 child: Column(
                   children: [
-                    // Tombol Back di pojok kiri atas panel kiri
+                    // Tombol Back
                     Align(
                       alignment: Alignment.topLeft,
                       child: IconButton(
@@ -410,39 +405,57 @@ Kerahkan semua ilmumu, Jagoan! Dunia (dan sertifikatmu) menantimu!
                       ),
                     ),
                     
-                    // Avatar Guru 3D (Mengisi ruang vertikal yang tersisa)
+                    // Model 3D Viewer
                     Expanded(
                       child: Padding(
                         padding: const EdgeInsets.all(10.0),
                         child: ModelViewer(
-                          src: 'assets/models/teacher.glb', // Pastikan aset ini ada
+                          src: modelAsset, 
                           backgroundColor: Colors.transparent,
                           autoRotate: true,
+                          autoPlay: true,
+                          animationName: isBossLevel ? 'stay' : null,
+                          exposure: 8.0, 
                           cameraControls: false,
                           disableZoom: true,
                         ),
                       ),
                     ),
 
-                    // Judul Level & Materi (Chat Bubble di bawah guru)
+                    // Judul Level & Materi
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.2),
+                        color: Colors.black.withOpacity(0.3),
                         borderRadius: const BorderRadius.only(topLeft: Radius.circular(30)),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            "LEVEL ${level.id}",
-                            style: GoogleFonts.poppins(
-                              color: Colors.cyanAccent,
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: 1.5,
-                            ),
+                          Row(
+                            children: [
+                              Text(
+                                isBossLevel ? "BOSS BATTLE" : "LEVEL ${level.id}",
+                                style: GoogleFonts.poppins(
+                                  color: isBossLevel ? Colors.redAccent : Colors.cyanAccent,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 1.5,
+                                ),
+                              ),
+                              if (isReview) ...[ 
+                                const SizedBox(width: 10),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.orangeAccent,
+                                    borderRadius: BorderRadius.circular(4)
+                                  ),
+                                  child: const Text("REVIEW", style: TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.bold)),
+                                )
+                              ]
+                            ],
                           ),
                           const SizedBox(height: 5),
                           Text(
@@ -457,7 +470,11 @@ Kerahkan semua ilmumu, Jagoan! Dunia (dan sertifikatmu) menantimu!
                           ),
                           const SizedBox(height: 10),
                           Text(
-                            "Sensei berkata: \"Perhatikan materinya di sebelah kanan! 👉\"",
+                            isReview 
+                              ? "Mode latihan santai. Tidak ada XP."
+                              : (isBossLevel 
+                                  ? "Kalahkan Boss ini untuk lanjut!" // Teks Khusus Boss
+                                  : "Sensei: \"Perhatikan materinya baik-baik!\""),
                             style: GoogleFonts.poppins(
                               color: Colors.white70,
                               fontSize: 11,
@@ -474,7 +491,7 @@ Kerahkan semua ilmumu, Jagoan! Dunia (dan sertifikatmu) menantimu!
 
             // ================= BAGIAN KANAN (KONTEN MATERI) =================
             Expanded(
-              flex: 6, // Mengambil 60% lebar layar
+              flex: 6,
               child: Column(
                 children: [
                   // Area Scroll Materi
@@ -487,10 +504,14 @@ Kerahkan semua ilmumu, Jagoan! Dunia (dan sertifikatmu) menantimu!
                         children: [
                           Row(
                             children: [
-                              const Icon(Icons.menu_book_rounded, color: Colors.cyanAccent, size: 24),
+                              Icon(
+                                isBossLevel ? Icons.security : Icons.menu_book_rounded, 
+                                color: isBossLevel ? Colors.redAccent : Colors.cyanAccent, 
+                                size: 24
+                              ),
                               const SizedBox(width: 10),
                               Text(
-                                "Catatan Sensei:",
+                                isBossLevel ? "Kelemahan Boss:" : (isReview ? "Materi Latihan:" : "Catatan Sensei:"),
                                 style: GoogleFonts.poppins(
                                   color: Colors.white,
                                   fontSize: 18,
@@ -508,9 +529,11 @@ Kerahkan semua ilmumu, Jagoan! Dunia (dan sertifikatmu) menantimu!
                             decoration: BoxDecoration(
                               color: const Color(0xFF2D2D44),
                               borderRadius: BorderRadius.circular(25),
-                              border: Border.all(color: Colors.white10),
+                              border: Border.all(
+                                color: isBossLevel ? Colors.redAccent.withOpacity(0.5) : Colors.white10
+                              ),
                               boxShadow: [
-                                BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 10, offset: const Offset(0,5))
+                                BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 10, offset: const Offset(0,5))
                               ],
                             ),
                             child: Text(
@@ -518,7 +541,7 @@ Kerahkan semua ilmumu, Jagoan! Dunia (dan sertifikatmu) menantimu!
                               style: GoogleFonts.poppins(
                                 color: Colors.white,
                                 fontSize: 15,
-                                height: 1.8, // Spasi antar baris lega
+                                height: 1.8,
                               ),
                             ),
                           ),
@@ -534,7 +557,7 @@ Kerahkan semua ilmumu, Jagoan! Dunia (dan sertifikatmu) menantimu!
                     decoration: BoxDecoration(
                       color: const Color(0xFF1E1E2C),
                       boxShadow: [
-                        BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 10, offset: const Offset(0,-5))
+                        BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 10, offset: const Offset(0,-5))
                       ],
                     ),
                     child: SizedBox(
@@ -542,15 +565,23 @@ Kerahkan semua ilmumu, Jagoan! Dunia (dan sertifikatmu) menantimu!
                       height: 55,
                       child: ElevatedButton(
                         onPressed: () {
+                          // Pindah ke Quiz dengan membawa status Review
                           Navigator.pushReplacement(
                             context,
                             MaterialPageRoute(
-                              builder: (context) => QuizScreen(level: level, user: user),
+                              builder: (context) => QuizScreen(
+                                level: level, 
+                                user: user,
+                                isReview: isReview,
+                              ),
                             ),
                           );
                         },
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.cyanAccent,
+                          // Ubah warna tombol jadi Merah jika Boss
+                          backgroundColor: isReview 
+                              ? Colors.orangeAccent 
+                              : (isBossLevel ? Colors.redAccent : Colors.cyanAccent),
                           foregroundColor: Colors.black,
                           elevation: 5,
                           shape: RoundedRectangleBorder(
@@ -561,14 +592,21 @@ Kerahkan semua ilmumu, Jagoan! Dunia (dan sertifikatmu) menantimu!
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Text(
-                              "SIAP UJIAN!",
+                              isReview 
+                                  ? "MULAI LATIHAN" 
+                                  : (isBossLevel ? "LAWAN BOSS!" : "SIAP UJIAN!"),
                               style: GoogleFonts.poppins(
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
                             const SizedBox(width: 10),
-                            const Icon(Icons.flash_on_rounded, color: Colors.redAccent),
+                            Icon(
+                              isReview 
+                                  ? Icons.refresh 
+                                  : (isBossLevel ? Icons.dangerous : Icons.flash_on_rounded), 
+                              color: isReview ? Colors.black : Colors.black
+                            ),
                           ],
                         ),
                       ),

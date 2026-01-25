@@ -9,6 +9,7 @@ import '../story/story_screen.dart';
 import '../avatar/avatar_screen.dart';
 import '../match/match_screen.dart';
 import '../profile/profile_screen.dart';
+import '../settings/settings_screen.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -163,7 +164,13 @@ class _MainScreenState extends State<MainScreen> {
               
               // C. PENGATURAN
               IconButton(
-                onPressed: () {},
+                onPressed: () {
+                  // [FIX] Navigasi ke Settings Screen
+                  Navigator.push(
+                    context, 
+                    MaterialPageRoute(builder: (context) => const SettingsScreen())
+                  );
+                },
                 icon: const Icon(Icons.settings, color: Colors.white24, size: 20),
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
