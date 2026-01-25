@@ -4,6 +4,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:ui'; // Untuk ImageFilter (Blur)
 
+// [HAPUS] import 'package:audioplayers/audioplayers.dart';
+// [BARU] Import Audio Manager agar terhubung dengan SettingScreen
+import '../../core/services/audio_manager.dart';
+
 import '../../models/user_model.dart';
 import '../story/story_screen.dart';
 import '../avatar/avatar_screen.dart';
@@ -22,6 +26,9 @@ class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 1; // Default ke Story
   final String uid = FirebaseAuth.instance.currentUser!.uid;
 
+  // [BARU] Panggil Singleton Audio Manager
+  final AudioManager _audioManager = AudioManager();
+
   @override
   void initState() {
     super.initState();
@@ -31,6 +38,10 @@ class _MainScreenState extends State<MainScreen> {
       DeviceOrientation.landscapeRight,
     ]);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+
+    // [BARU] Inisialisasi BGM via Manager
+    // Ini otomatis mengecek settingan (Nyala/Mati) sebelum memutar
+    _audioManager.initBgm();
   }
 
   @override
@@ -41,10 +52,16 @@ class _MainScreenState extends State<MainScreen> {
       DeviceOrientation.landscapeRight,
     ]);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    
+    // [NOTE] Kita TIDAK men-dispose _audioManager di sini.
+    // Alasannya: Agar saat pindah ke SettingsScreen musik tidak mati mendadak.
+    // AudioManager bersifat Singleton dan hidup selama aplikasi berjalan.
+    
     super.dispose();
   }
 
   void _onItemTapped(int index) {
+    _audioManager.playClick(); // [BARU] Gunakan Manager untuk suara klik
     setState(() {
       _selectedIndex = index;
     });
@@ -106,9 +123,6 @@ class _MainScreenState extends State<MainScreen> {
                   Expanded(
                     child: Column(
                       children: [
-                        // [PERBAIKAN UTAMA DISINI]
-                        // Header Atas HANYA muncul jika BUKAN index 2 (MatchScreen)
-                        // Jadi saat index == 2 (Match), header ini hilang, sisa Navbar kiri saja.
                         if (_selectedIndex != 2)
                           _buildHeaderNoName(user), 
                         
@@ -165,7 +179,7 @@ class _MainScreenState extends State<MainScreen> {
               // C. PENGATURAN
               IconButton(
                 onPressed: () {
-                  // [FIX] Navigasi ke Settings Screen
+                  _audioManager.playClick(); // [BARU] Suara klik via Manager
                   Navigator.push(
                     context, 
                     MaterialPageRoute(builder: (context) => const SettingsScreen())
@@ -183,7 +197,6 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-  // 2. HEADER ATAS (Info Level, XP, Gold)
   Widget _buildHeaderNoName(UserModel user) {
     double xpProgress = user.maxXp > 0 ? (user.currentXp / user.maxXp).clamp(0.0, 1.0) : 0.0;
 
@@ -194,8 +207,6 @@ class _MainScreenState extends State<MainScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          
-          // BADGE LEVEL
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
@@ -205,10 +216,7 @@ class _MainScreenState extends State<MainScreen> {
             ),
             child: Text("Lv.${user.level}", style: const TextStyle(color: Colors.black, fontSize: 11, fontWeight: FontWeight.bold)),
           ),
-
           const SizedBox(width: 15),
-
-          // XP BAR
           Expanded(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -231,10 +239,7 @@ class _MainScreenState extends State<MainScreen> {
               ],
             ),
           ),
-
           const SizedBox(width: 30),
-
-          // GOLD
           Row(
             children: [
               const Icon(Icons.monetization_on, color: Colors.amber, size: 18),
@@ -254,7 +259,10 @@ class _MainScreenState extends State<MainScreen> {
 
   Widget _buildSideProfileIcon(UserModel user) {
     return GestureDetector(
-      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ProfileScreen())),
+      onTap: () {
+        _audioManager.playClick(); // [BARU] Suara klik via Manager
+        Navigator.push(context, MaterialPageRoute(builder: (context) => const ProfileScreen()));
+      },
       child: Container(
         height: 45, width: 45,
         decoration: BoxDecoration(
@@ -274,7 +282,7 @@ class _MainScreenState extends State<MainScreen> {
     bool isSelected = _selectedIndex == index;
     
     return GestureDetector(
-      onTap: () => _onItemTapped(index),
+      onTap: () => _onItemTapped(index), // Memanggil _onItemTapped yang sudah ada _audioManager.playClick()
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 4),
         height: 55, 
@@ -282,7 +290,6 @@ class _MainScreenState extends State<MainScreen> {
         child: Stack(
           alignment: Alignment.centerLeft, 
           children: [
-            // A. GARIS INDIKATOR
             AnimatedPositioned(
               duration: const Duration(milliseconds: 200),
               curve: Curves.easeOut,
@@ -298,8 +305,6 @@ class _MainScreenState extends State<MainScreen> {
                 ),
               ),
             ),
-
-            // B. IKON DAN LABEL
             Center(
               child: AnimatedScale(
                 scale: isSelected ? 1.1 : 1.0,

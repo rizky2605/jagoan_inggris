@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../core/services/audio_manager.dart'; // [IMPORT INI]
 import '../auth/auth_screen.dart';
-import '../profile/profile_screen.dart'; // Untuk navigasi ke Edit Profil
+import '../profile/profile_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -13,16 +14,29 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  // State untuk Toggle (Nantinya bisa disimpan di SharedPreferences)
-  bool _isMusicOn = true;
-  bool _isSfxOn = true;
+  // Ambil instance AudioManager
+  final AudioManager _audioManager = AudioManager();
+
+  // State Toggle
+  late bool _isMusicOn;
+  late bool _isSfxOn;
   bool _isNotifOn = true;
 
   final String uid = FirebaseAuth.instance.currentUser?.uid ?? "";
 
+  @override
+  void initState() {
+    super.initState();
+    // [PENTING] Ambil status terakhir dari AudioManager saat layar dibuka
+    _isMusicOn = _audioManager.isMusicOn;
+    _isSfxOn = _audioManager.isSfxOn;
+  }
+
   // --- LOGIKA HAPUS AKUN (DANGER ZONE) ---
   Future<void> _deleteAccount() async {
-    bool confirm = await showDialog(
+     // ... (Kode delete account Anda tetap sama, tidak perlu diubah) ...
+     // Salin saja logika _deleteAccount Anda sebelumnya ke sini
+      bool confirm = await showDialog(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF2A0045),
@@ -44,27 +58,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     if (confirm) {
       try {
-        // 1. Hapus data di Firestore
         await FirebaseFirestore.instance.collection('users').doc(uid).delete();
-        
-        // 2. Hapus user Authentication
         await FirebaseAuth.instance.currentUser?.delete();
-
         if (!mounted) return;
-        
-        // 3. Kembali ke Login
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (context) => const AuthScreen()), 
           (route) => false,
         );
       } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Gagal menghapus akun: $e. Coba login ulang.")));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Gagal: $e")));
       }
     }
   }
 
   // --- LOGIKA LOGOUT ---
   void _handleLogout() async {
+    // [OPSIONAL] Matikan musik saat logout jika diinginkan
+    // await _audioManager.stopBgm(); 
+    
     await FirebaseAuth.instance.signOut();
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
@@ -76,7 +87,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0F0025), // Background Ungu Gelap
+      backgroundColor: const Color(0xFF0F0025),
       appBar: AppBar(
         title: Text("PENGATURAN", style: GoogleFonts.orbitron(fontWeight: FontWeight.bold, color: Colors.cyanAccent)),
         backgroundColor: Colors.transparent,
@@ -100,18 +111,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
           children: [
             // SECTION 1: UMUM
             _buildSectionHeader("UMUM"),
-            _buildSwitchTile("Musik Latar", Icons.music_note, _isMusicOn, (val) => setState(() => _isMusicOn = val)),
-            _buildSwitchTile("Efek Suara (SFX)", Icons.volume_up, _isSfxOn, (val) => setState(() => _isSfxOn = val)),
-            _buildSwitchTile("Notifikasi Harian", Icons.notifications_active, _isNotifOn, (val) => setState(() => _isNotifOn = val)),
+            
+            // [UPDATE] Menggunakan logika AudioManager
+            _buildSwitchTile(
+              "Musik Latar", 
+              Icons.music_note, 
+              _isMusicOn, 
+              (val) {
+                setState(() => _isMusicOn = val);
+                _audioManager.toggleMusic(val); // Panggil Manager
+                if(val) _audioManager.playClick(); // Efek suara klik
+              }
+            ),
+
+            _buildSwitchTile(
+              "Efek Suara (SFX)", 
+              Icons.volume_up, 
+              _isSfxOn, 
+              (val) {
+                setState(() => _isSfxOn = val);
+                _audioManager.toggleSfx(val); // Panggil Manager
+                if(val) _audioManager.playClick(); // Test bunyi
+              }
+            ),
+
+            _buildSwitchTile("Notifikasi Harian", Icons.notifications_active, _isNotifOn, (val) {
+              setState(() => _isNotifOn = val);
+              _audioManager.playClick();
+            }),
 
             const SizedBox(height: 30),
 
             // SECTION 2: AKUN
             _buildSectionHeader("AKUN"),
             _buildActionTile("Edit Profil", Icons.edit, Colors.blueAccent, () {
+              _audioManager.playClick();
               Navigator.push(context, MaterialPageRoute(builder: (context) => const ProfileScreen()));
             }),
             _buildActionTile("Tentang Aplikasi", Icons.info_outline, Colors.white70, () {
+              _audioManager.playClick();
               _showAboutDialog();
             }),
             
@@ -131,8 +169,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // --- WIDGET HELPERS ---
-
+  // ... Widget Helpers (sama seperti kode Anda, tidak perlu diubah) ...
   Widget _buildSectionHeader(String title) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
