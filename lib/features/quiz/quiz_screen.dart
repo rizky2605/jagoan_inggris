@@ -1,16 +1,20 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; 
 import 'package:model_viewer_plus/model_viewer_plus.dart';
-import '../../models/question_model.dart';
+import 'package:lottie/lottie.dart'; 
+
 import '../../models/level_model.dart';
 import '../../models/user_model.dart';
-import 'result_screen.dart';
+import '../../models/question_model.dart';
+import 'result_screen.dart'; 
 
 class QuizScreen extends StatefulWidget {
   final LevelModel level;
   final UserModel user;
   final List<QuestionModel>? customQuestions;
   final String? opponentName; 
+  final bool isReview; // TAMBAHKAN INI
 
   const QuizScreen({
     super.key, 
@@ -18,26 +22,36 @@ class QuizScreen extends StatefulWidget {
     required this.user,
     this.customQuestions,
     this.opponentName,
+    this.isReview = false, // DEFAULT FALSE
   });
 
   @override
   State<QuizScreen> createState() => _QuizScreenState();
 }
 
-class _QuizScreenState extends State<QuizScreen> {
-  // Game State
+class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
+  // --- STATE GAME ---
   int _currentIndex = 0;
   double _monsterHealth = 1.0;
   double _playerHealth = 1.0;
   int _score = 0;
   bool _isAnswered = false;
+  bool _showEndText = false; 
+  bool _isVictory = false; 
+  List<int> _wrongIndices = [];
+
+  String _playerAnim = 'idle';
+  String _monsterAnim = 'idle';
   
-  // Timer Logic
-  Timer? _questionTimer;
+  late AnimationController _effectController;
+  bool _showMonsterHitEffect = false; 
+  bool _showPlayerHitEffect = false;  
+
+  Timer? _gameLoopTimer;
+  Timer? _countdownTimer;
   int _timeLeft = 10;
   final int _maxTime = 10;
 
-  // Countdown & Start
   int _startCountdown = 3;
   bool _isGameStarted = false;
 
@@ -46,76 +60,90 @@ class _QuizScreenState extends State<QuizScreen> {
   @override
   void initState() {
     super.initState();
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+
+    _effectController = AnimationController(vsync: this, duration: const Duration(milliseconds: 1200));
     _initializeQuestions();
-    _startPreGameCountdown();
+    _startCountdownTimer();
   }
 
-  // --- FUNGSI INISIALISASI SOAL YANG LEBIH AMAN ---
-  // --- FUNGSI INISIALISASI SOAL (PERBAIKAN) ---
+  @override
+  void dispose() {
+    _countdownTimer?.cancel();
+    _gameLoopTimer?.cancel();
+    _effectController.dispose();
+    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    super.dispose();
+  }
+
   void _initializeQuestions() {
-    // 1. Cek apakah ini mode Battle/Custom (ada customQuestions)
     if (widget.customQuestions != null && widget.customQuestions!.isNotEmpty) {
       _questions = widget.customQuestions!;
-    } 
-    // 2. Jika bukan, ambil soal dari Database Map berdasarkan Level ID user
-    else {
-      // Kita panggil map 'levelQuestions' dari question_model.dart
-      // Gunakan widget.level.id untuk mengambil soal yang sesuai levelnya
-      // Jika soal untuk level itu belum ada, fallback ke level 1 agar tidak crash
-      _questions = levelQuestions[widget.level.id] ?? levelQuestions[1]!;
+    } else {
+      _questions = List.from(levelQuestions[widget.level.id] ?? levelQuestions[1]!);
     }
 
-    // 3. Safety check terakhir (jika data benar-benar kosong)
     if (_questions.isEmpty) {
       _questions = [
-        QuestionModel(question: "Soal belum tersedia", options: ["OK"], correctIndex: 0, buffType: 'none')
+        QuestionModel(question: "Siap?", options: ["YA"], correctIndex: 0, buffType: 'none')
       ];
     }
   }
 
-  void _startPreGameCountdown() {
-    Timer.periodic(const Duration(seconds: 1), (timer) {
+  // --- LOGIKA PERMAINAN ---
+
+  void _startCountdownTimer() {
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted) {
         timer.cancel();
         return;
       }
-      if (_startCountdown > 0) {
-        setState(() => _startCountdown--);
-      } else {
-        timer.cancel();
-        setState(() {
-          _isGameStarted = true;
-        });
-        _startQuestionTimer();
-      }
+      setState(() {
+        if (_startCountdown > 1) {
+          _startCountdown--;
+        } else {
+          timer.cancel();
+          _startGame();
+        }
+      });
+    });
+  }
+
+  void _startGame() {
+    setState(() {
+      _isGameStarted = true;
+    });
+    Future.delayed(const Duration(milliseconds: 800), () {
+      if (mounted) _startQuestionTimer();
     });
   }
 
   void _startQuestionTimer() {
     _timeLeft = _maxTime;
-    _questionTimer?.cancel();
-    _questionTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+    _gameLoopTimer?.cancel();
+    _gameLoopTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted) {
         timer.cancel();
         return;
       }
-      if (_timeLeft > 0) {
-        setState(() => _timeLeft--);
-      } else {
-        _answerQuestion(-1); // Waktu habis
-      }
+      setState(() {
+        if (_timeLeft > 0) {
+          _timeLeft--;
+        } else {
+          _processAnswer(-1); 
+        }
+      });
     });
   }
 
-  @override
-  void dispose() {
-    _questionTimer?.cancel();
-    super.dispose();
-  }
-
-  void _answerQuestion(int selectedIndex) {
+  void _processAnswer(int selectedIndex) async {
     if (_isAnswered) return;
-    _questionTimer?.cancel();
+    _gameLoopTimer?.cancel();
 
     setState(() {
       _isAnswered = true;
@@ -125,166 +153,375 @@ class _QuizScreenState extends State<QuizScreen> {
     bool isCorrect = selectedIndex == currentQ.correctIndex;
 
     if (isCorrect) {
-      // Skor berbasis kecepatan
+      double damage = 0.15;
+      bool isCritical = _timeLeft >= 8; 
+      if (isCritical) damage = 0.30;
+
       int speedBonus = _timeLeft * 2;
-      int damage = 15;
-
-      if (currentQ.buffType == 'damage') {
-        damage *= 2;
-        _showBuffEffect("DAMAGE UP! CRITICAL!");
-      } else if (currentQ.buffType == 'heal') {
-        _playerHealth = (_playerHealth + 0.2).clamp(0.0, 1.0);
-        _showBuffEffect("HEALING ACTIVATED!");
-      } else if (currentQ.buffType == 'defense') {
-        _showBuffEffect("SHIELD UP!");
-      }
-
+      
       setState(() {
         _score += (10 + speedBonus);
-        _monsterHealth -= (damage / 100);
-        if (_monsterHealth < 0) _monsterHealth = 0;
+        _playerAnim = 'attack';
       });
+
+      await Future.delayed(const Duration(milliseconds: 600));
+
+      if (mounted) {
+        setState(() {
+          _monsterHealth -= damage;
+          if (_monsterHealth < 0) _monsterHealth = 0;
+          _monsterAnim = 'hit';
+          _showMonsterHitEffect = true;
+        });
+        _effectController.reset();
+        _effectController.forward();
+      }
     } else {
       setState(() {
-        _playerHealth -= 0.15;
-        if (_playerHealth < 0) _playerHealth = 0;
+        if (!_wrongIndices.contains(_currentIndex)) {
+          _wrongIndices.add(_currentIndex);
+        }
+        _monsterAnim = 'attack';
       });
+
+      await Future.delayed(const Duration(milliseconds: 600));
+
+      if (mounted) {
+        setState(() {
+          _playerHealth -= 0.15;
+          if (_playerHealth < 0) _playerHealth = 0;
+          _playerAnim = 'hit';
+          _showPlayerHitEffect = true;
+        });
+        _effectController.reset();
+        _effectController.forward();
+      }
     }
 
-    Future.delayed(const Duration(milliseconds: 1500), () {
-      if (!mounted) return;
-      
-      if (_currentIndex < _questions.length - 1 && _playerHealth > 0 && _monsterHealth > 0) {
-        setState(() {
-          _currentIndex++;
-          _isAnswered = false;
-        });
-        _startQuestionTimer();
+    await Future.delayed(const Duration(milliseconds: 1000));
+
+    if (!mounted) return;
+
+    if (_playerHealth <= 0 || _monsterHealth <= 0) {
+      _finishGame();
+    } 
+    else {
+      _goToNextQuestion();
+    }
+  }
+
+  void _goToNextQuestion() {
+    setState(() {
+      if (_currentIndex >= _questions.length - 1) {
+        if (_wrongIndices.isNotEmpty) {
+          _currentIndex = _wrongIndices.first;
+          _wrongIndices.removeAt(0); 
+        } else {
+          _currentIndex = 0;
+          _questions.shuffle(); 
+        }
       } else {
-        _showVictoryDialog();
+        _currentIndex++;
+      }
+
+      _isAnswered = false;
+      _timeLeft = _maxTime;
+      _playerAnim = 'idle';
+      _monsterAnim = 'idle';
+      _showPlayerHitEffect = false;
+      _showMonsterHitEffect = false;
+    });
+    _startQuestionTimer();
+  }
+
+  void _finishGame() async {
+    if (!mounted) return;
+
+    setState(() {
+      _showEndText = true;
+
+      if (_monsterHealth <= 0) {
+        _isVictory = true;
+        _monsterAnim = 'defeat'; 
+        _playerAnim = 'idle';
+      } else {
+        _isVictory = false;
+        _playerAnim = 'defeat';
+        _monsterAnim = 'idle';
       }
     });
-  }
 
-  void _showBuffEffect(String text) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(text, textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.bold)),
-        backgroundColor: Colors.amber,
-        duration: const Duration(milliseconds: 800),
-      )
-    );
-  }
+    await Future.delayed(const Duration(seconds: 3));
 
-  void _showVictoryDialog() {
+    if (!mounted) return;
+
+    // LOGIKA SKOR: Jika Review atau Kalah, skor jadi 0 untuk database
+    int finalScore = (widget.isReview || !_isVictory) ? 0 : _score;
+
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
         builder: (context) => ResultScreen(
-          score: _score,
+          score: finalScore,
           totalQuestions: _questions.length,
           levelId: widget.level.id,
           user: widget.user,
+          isVictory: _isVictory,
         ),
+      ),
+    );
+  }
+
+  void _showExitConfirmation() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E2C),
+        title: const Text("Keluar Permainan?", style: TextStyle(color: Colors.white)),
+        content: const Text("Apakah Anda yakin ingin menyerah?", style: TextStyle(color: Colors.white70)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Lanjut", style: TextStyle(color: Colors.cyanAccent)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              Navigator.pop(context);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+            child: const Text("Keluar"),
+          ),
+        ],
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    if (!_isGameStarted) return _buildCountdownOverlay();
+    if (!_isGameStarted) {
+      return Scaffold(
+        body: Container(
+          decoration: const BoxDecoration(
+            image: DecorationImage(
+              image: AssetImage("assets/images/jungle.jpg"), 
+              fit: BoxFit.cover,
+              colorFilter: ColorFilter.mode(Colors.black87, BlendMode.darken)
+            ),
+          ),
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(widget.isReview ? "MODE REVIEW" : "GET READY!", style: const TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.bold, letterSpacing: 2)),
+                const SizedBox(height: 20),
+                Text("$_startCountdown", style: const TextStyle(color: Colors.cyanAccent, fontSize: 100, fontWeight: FontWeight.w900)),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
 
     QuestionModel currentQ = _questions[_currentIndex];
-    final pinkNeon = const Color(0xFFFF66C4);
-    final cyanNeon = Colors.cyanAccent;
+    final loadout = widget.user.equippedLoadout;
+    String playerPath = 'assets/models/${loadout['body'] ?? 'avatar'}_${loadout['head'] ?? 'none'}_${loadout['wings'] ?? 'none'}.glb';
+
+    bool isBossLevel = widget.level.id % 5 == 0;
+    String monsterPath = isBossLevel ? 'assets/models/boss1.glb' : 'assets/models/monster1.glb';
+
+    String playerSkillEffect = loadout['effect'] ?? 'fire'; 
+    String monsterSkillEffect = 'blood'; 
 
     return Scaffold(
       body: Stack(
         children: [
-          // Background
           Container(
             decoration: const BoxDecoration(
-              image: DecorationImage(image: AssetImage("assets/images/bg_stars.jpg"), fit: BoxFit.cover),
-              color: Color(0xFF0F0025),
+              image: DecorationImage(
+                image: AssetImage("assets/images/jungle.jpg"), 
+                fit: BoxFit.cover,
+                colorFilter: ColorFilter.mode(Colors.black45, BlendMode.darken) 
+              ),
             ),
           ),
 
           SafeArea(
-            child: Column(
-              children: [
-                // HEADER
-                Padding(
-                  padding: const EdgeInsets.all(10),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      _buildTimerBadge(),
-                      if (currentQ.buffType != 'none')
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-                          decoration: BoxDecoration(color: Colors.amber, borderRadius: BorderRadius.circular(20)),
-                          child: Text("BONUS: ${currentQ.buffType.toUpperCase()}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 10, color: Colors.black)),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: _timeLeft < 4 ? Colors.red : Colors.blueAccent,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 2)
                         ),
+                        child: Text("$_timeLeft", style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white)),
+                      ),
                     ],
                   ),
+
+                  Expanded(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          flex: 3,
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              _buildHpBar("YOU", _playerHealth, Colors.cyan),
+                              const SizedBox(height: 10),
+                              Expanded(
+                                child: Stack(
+                                  alignment: Alignment.center,
+                                  children: [
+                                    ModelViewer(
+                                      key: ValueKey(playerPath + _playerAnim), 
+                                      src: playerPath,
+                                      animationName: _playerAnim,
+                                      autoPlay: true,
+                                      cameraOrbit: "270deg 80deg auto", 
+                                      backgroundColor: Colors.transparent,
+                                      exposure: 8.0, 
+                                    ),
+                                    if (_showPlayerHitEffect) _buildEffect(monsterSkillEffect),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        Expanded(
+                          flex: 4,
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [_buildQuestionCard(currentQ)],
+                          ),
+                        ),
+
+                        Expanded(
+                          flex: 3,
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              _buildHpBar(isBossLevel ? "BOSS" : "MONSTER", _monsterHealth, Colors.red),
+                              const SizedBox(height: 10),
+                              Expanded(
+                                child: Stack(
+                                  alignment: Alignment.center,
+                                  children: [
+                                    ModelViewer(
+                                      key: ValueKey(monsterPath + _monsterAnim),
+                                      src: monsterPath,
+                                      animationName: _monsterAnim,
+                                      autoPlay: true,
+                                      cameraOrbit: "90deg 80deg auto", 
+                                      backgroundColor: Colors.transparent,
+                                      exposure: 8.0, 
+                                    ),
+                                    if (_showMonsterHitEffect) _buildEffect(playerSkillEffect),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          Positioned(
+            top: 15, left: 15,
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: _showExitConfirmation,
+                borderRadius: BorderRadius.circular(30),
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.4),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white24),
+                  ),
+                  child: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 20),
                 ),
+              ),
+            ),
+          ),
 
-                // ARENA
-                Expanded(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      // KIRI: PLAYER
-                      Expanded(
-                        flex: 2,
-                        child: _buildCharacterStats(widget.user.username, _playerHealth, 'assets/models/avatar1.glb', cyanNeon),
-                      ),
-
-                      // TENGAH: SOAL
-                      Expanded(
-                        flex: 4,
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(15),
-                              decoration: BoxDecoration(
-                                color: Colors.black.withValues(alpha: 0.7),
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(color: pinkNeon),
-                                boxShadow: [BoxShadow(color: pinkNeon.withValues(alpha: 0.3), blurRadius: 20)],
-                              ),
-                              child: Text(
-                                currentQ.question, // Pastikan tidak null (Model sudah handle)
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-                              ),
-                            ),
-                            const SizedBox(height: 20),
-                            ...List.generate(currentQ.options.length, (index) {
-                              return Padding(
-                                padding: const EdgeInsets.only(bottom: 8.0),
-                                child: _buildAnswerButton(currentQ.options[index], index, currentQ.correctIndex),
-                              );
-                            }),
+          if (_showEndText)
+            Container(
+              color: Colors.black45,
+              child: Center(
+                child: TweenAnimationBuilder(
+                  duration: const Duration(milliseconds: 600),
+                  tween: Tween<double>(begin: 0, end: 1),
+                  builder: (context, double value, child) {
+                    return Transform.scale(
+                      scale: value,
+                      child: Text(
+                        _isVictory ? "VICTORY" : "DEFEAT",
+                        style: TextStyle(
+                          fontSize: 90,
+                          fontWeight: FontWeight.w900,
+                          fontStyle: FontStyle.italic,
+                          color: _isVictory ? Colors.yellowAccent : Colors.red,
+                          shadows: const [
+                            Shadow(blurRadius: 40, color: Colors.black),
+                            Shadow(blurRadius: 15, color: Colors.white30),
                           ],
                         ),
                       ),
-
-                      // KANAN: LAWAN
-                      Expanded(
-                        flex: 2,
-                        child: _buildCharacterStats(
-                          widget.opponentName ?? "MONSTER", 
-                          _monsterHealth, 
-                          widget.opponentName != null ? 'assets/models/avatar1.glb' : 'assets/models/monster1.glb', 
-                          Colors.redAccent
-                        ),
-                      ),
-                    ],
-                  ),
+                    );
+                  },
                 ),
-              ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEffect(String name) {
+    return Center(
+      child: Lottie.asset(
+        'assets/effects/$name.json',
+        controller: _effectController,
+        width: 200, height: 200, fit: BoxFit.cover, repeat: false,
+        errorBuilder: (context, error, stackTrace) => const SizedBox(),
+      ),
+    );
+  }
+
+  Widget _buildHpBar(String label, double pct, Color color) {
+    return Container(
+      width: 120, padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: color.withOpacity(0.5), width: 1.5),
+      ),
+      child: Column(
+        children: [
+          Text(label, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 10)),
+          const SizedBox(height: 4),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(5),
+            child: LinearProgressIndicator(
+              value: pct, minHeight: 8, backgroundColor: Colors.white10, color: color,
             ),
           ),
         ],
@@ -292,90 +529,44 @@ class _QuizScreenState extends State<QuizScreen> {
     );
   }
 
-  Widget _buildCountdownOverlay() {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Text("BERSIAP!", style: TextStyle(color: Colors.white, fontSize: 20, letterSpacing: 5)),
-            const SizedBox(height: 20),
-            Text(
-              "$_startCountdown",
-              style: const TextStyle(color: Colors.cyanAccent, fontSize: 100, fontWeight: FontWeight.bold),
-            ),
-            if (widget.opponentName != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 20),
-                child: Text("VS ${widget.opponentName}", style: const TextStyle(color: Colors.redAccent, fontSize: 18)),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTimerBadge() {
+  Widget _buildQuestionCard(QuestionModel q) {
     return Container(
-      padding: const EdgeInsets.all(8),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: _timeLeft < 4 ? Colors.red : Colors.blueAccent,
-        shape: BoxShape.circle,
-        boxShadow: [BoxShadow(color: (_timeLeft < 4 ? Colors.red : Colors.blue).withValues(alpha: 0.5), blurRadius: 10)],
+        color: const Color(0xFF1E1E2C).withOpacity(0.85),
+        borderRadius: BorderRadius.circular(25),
+        border: Border.all(color: Colors.white10, width: 2),
+        boxShadow: [const BoxShadow(color: Colors.black45, blurRadius: 15, offset: Offset(0, 8))],
       ),
-      child: Text("$_timeLeft", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-    );
-  }
-
-  Widget _buildCharacterStats(String name, double hp, String modelPath, Color color) {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Container(
-          width: 80, height: 8,
-          margin: const EdgeInsets.only(bottom: 5),
-          child: LinearProgressIndicator(value: hp, color: color, backgroundColor: Colors.grey[800]),
-        ),
-        Text(name, style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold)),
-        
-        SizedBox(
-          height: 150,
-          // Gunakan Error Builder agar tidak crash jika aset 3D error di web
-          child: ModelViewer(
-            src: modelPath, 
-            autoRotate: false, 
-            cameraControls: false, 
-            backgroundColor: Colors.transparent,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildAnswerButton(String text, int index, int correctIndex) {
-    Color borderColor = Colors.white24;
-    Color bgColor = Colors.black54;
-
-    if (_isAnswered) {
-      if (index == correctIndex) {
-        borderColor = Colors.green; bgColor = Colors.green.withValues(alpha: 0.3);
-      } else {
-        borderColor = Colors.red; bgColor = Colors.red.withValues(alpha: 0.3);
-      }
-    }
-
-    return GestureDetector(
-      onTap: () => _answerQuestion(index),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          color: bgColor,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: borderColor),
-        ),
-        child: Text(text, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(q.question, textAlign: TextAlign.center, 
+            style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 20),
+          Wrap(
+            spacing: 12, runSpacing: 12, alignment: WrapAlignment.center,
+            children: List.generate(q.options.length, (index) {
+              return SizedBox(
+                width: 150,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF2A2A40),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 15),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                    side: BorderSide(
+                      color: _isAnswered ? (index == q.correctIndex ? Colors.green : Colors.red) : Colors.white24,
+                      width: 2,
+                    ),
+                  ),
+                  onPressed: () => _processAnswer(index),
+                  child: Text(q.options[index], textAlign: TextAlign.center, style: const TextStyle(fontSize: 14)),
+                ),
+              );
+            }),
+          )
+        ],
       ),
     );
   }
